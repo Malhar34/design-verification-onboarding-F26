@@ -1,0 +1,7 @@
+WORKSPACE
+*.history
+.DS_Store
+*.log
+imc.key
+*_submission.zip
+.submission-build.*
