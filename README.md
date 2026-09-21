@@ -385,6 +385,12 @@ make submission
 
 ## Resources
 
+### Testbench architecture
+- [VerificationGuide: SystemVerilog](https://verificationguide.com/systemverilog/)
+- [VerificationGuide: SystemVerilog Testbench](https://verificationguide.com/systemverilog/systemverilog-testbench/)
+- [VerificationGuide: SystemVerilog Adder Testbench Example](https://verificationguide.com/systemverilog-examples/systemverilog-testbench-example-adder/)
+- [ChipVerify: SystemVerilog Simple Testbench](https://chipverify.com/systemverilog/systemverilog-simple-testbench)
+
 ### SystemVerilog classes
 
 - [ChipVerify: SystemVerilog Classes](https://www.chipverify.com/systemverilog/systemverilog-class)
