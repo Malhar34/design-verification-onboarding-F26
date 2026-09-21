@@ -95,7 +95,7 @@ scoreboard must not assume that driver intent became DUT behavior.
 
 ![Testbench data flow](screenshots/tb_connection.png "Testbench data flow")
 
-| File | Purpose | Member work |
+| File | Purpose | Your work |
 | --- | --- | --- |
 | `src/verilog/tb/cpu_if.sv` | Groups chip signals and supplies a clocking block that prevents testbench/RTL races. | Provided |
 | `src/verilog/tb/cpu_seq_item.svh` | Represents one randomized instruction and encodes it into a program word. | Complete constraints |
@@ -108,7 +108,7 @@ scoreboard must not assume that driver intent became DUT behavior.
 | `src/verilog/tb/cpu_tb_pkg.sv` | Holds shared types, constants, helpers, and class includes. | Provided |
 | `src/verilog/tb/cpu_tb_top.sv` | Instantiates the DUT and components, runs tests, and contains assertions. | Add tests and assertions |
 | `Fall-26-Onboarding-TestPlan-Template.md` | Plan organized like the testbench: functional, chip-level, random, assertion, coverage, and bug-hunt sections. | Copy into initial and final plans |
-| `sim/behav/Include/member.include` | Lists the member CPU and testbench sources compiled by Xcelium. | Update only if filenames differ |
+| `sim/behav/Include/member.include` | Lists the your CPU and testbench sources compiled by Xcelium. | Update only if filenames differ |
 | `sim/behav/Makefile` | Provides the simulation, waveform, coverage, and bug-hunt commands. | Provided |
 
 ### How the components cooperate
@@ -176,8 +176,8 @@ Useful commands:
 ```sh
 make help        # list the supported targets
 make xrun        # compile and run your CPU with the repeatable default seed
-make simvision   # open the member-CPU waveform
-make coverage    # open the member coverage database in IMC
+make simvision   # open your CPU waveform
+make coverage    # open your coverage database in IMC
 ```
 
 `make xrun` reads `member.include`, creates symbolic links under `WORKSPACE`, compiles with
@@ -353,7 +353,7 @@ You may submit online as one archive or complete an in-person checkoff at a work
 - `testplan_initial.md` **is due Sunday, September 27 at 11:59pm, no exceptions.** 
 - You will submit `testplan_final.md`, with any revisions, **on Sunday, October 4 at 11:59pm, no exceptions.**
 2. The completed driver, monitor, scoreboard, sequence items, and top-level testbench (tb folder).
-3. `simulation.log` showing the member CPU suite passing.
+3. `simulation.log` showing your CPU suite passing.
 4. An IMC screenshot showing at least 98% DUT code coverage.
 5. Evidence that each added assertion detects its intended violation.
 6. Encrypted-CPU bug report first found through constrained random, with its numeric seed,
