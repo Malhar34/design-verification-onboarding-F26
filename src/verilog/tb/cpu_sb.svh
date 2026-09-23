@@ -148,7 +148,7 @@ class cpu_sb #(int DataSize=32, int AddrSize=14);
                     // TODO: Load both expected memories through the reference-model
                     // API and run it with MAX_REF_INSTR as its bound. Save predicted
                     // registers and the ordered store queue, reset per-program counters,
-                    // mark the program active, and sample the executed instruction trace.
+                    // and mark the program active.
 
                     fail("CPU_START prediction is not implemented");
                 end
@@ -180,8 +180,8 @@ class cpu_sb #(int DataSize=32, int AddrSize=14);
                 // A normal halt must finish all expected CPU activity
                 CPU_HALT: begin
                     // TODO: Check that every expected store was observed, compare
-                    // final data memory with the reference model, sample program
-                    // coverage, and mark the program inactive.
+                    // final data memory with the reference model, and mark the 
+                    // program inactive.
 
                     fail("CPU_HALT checking is not implemented");
                 end
