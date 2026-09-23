@@ -150,11 +150,9 @@ planned scenario, identify:
 - which component provides that expected result,
 - the evidence that would distinguish a DUT failure from a testbench failure.
 
-The first-week plan is a preliminary implementation outline, not a promise that you already
-understand the supplied coverage model. Duplicate the detailed test record and add table rows as
-needed. In the final revision, map implemented tests to the relevant functional-coverage bins and
-record what changed after simulation. Do not silently rewrite the original reasoning when results
-contradict it; the revision history is part of the DV work.
+The first-week plan is a preliminary implementation outline. Duplicate the detailed test record and
+add table rows as needed. In the final revision, record what changed after simulation. Do not silently
+rewrite the original reasoning when results contradict it; the revision history is part of the DV work.
 
 Do not make a checklist containing only one friendly example per operation. Think about value
 classes, limits, state transitions, dependencies between adjacent operations, ownership changes,
@@ -231,21 +229,9 @@ Translate the approved test plan into small, named scenarios in `cpu_tb_top.sv`.
 assembly and `run_directed` helpers instead of rebuilding program-loading boilerplate. Prefer a test
 whose failure points to one behavior over a long program that can fail for many unrelated reasons.
 
-The relevant member work is located here. The three test tasks are already called by the provided
-top-level `initial` block:
-
-| Work | Where to write it | 
-| --- | --- |
-| Functional directed CPU programs | `run_member_directed_tests()` in `cpu_tb_top.sv` |
-| Chip-control scenarios that use a CPU program | `run_member_directed_tests()` in `cpu_tb_top.sv` |
-| Random CPU programs | `run_member_random_tests()` in `cpu_tb_top.sv` |
-| Directed and random external address-port tests | `run_member_xbar_tests()` in `cpu_tb_top.sv` |
-| Instruction constraints | Constraint blocks in `cpu_seq_item.svh` | 
-| External-port constraints | Constraint blocks in `cpu_xbar_item.svh` | 
-| Concurrent assertions | Bottom of `cpu_tb_top.sv`, after the supplied assertion | 
-
-Do not add separate top-level `initial` blocks for ordinary tests. Put each scenario in the matching
-task so reset, ordering, final reporting, and the encrypted rerun remain consistent.
+Add directed, random, and external-port scenarios to the supplied top-level `initial` block using
+the existing helpers. Do not add separate top-level `initial` blocks for ordinary tests so reset,
+ordering, final reporting, and the encrypted rerun remain consistent.
 
 Assertions check temporal protocol rules on every cycle, independent of the active program. For
 each assertion, decide:
@@ -257,8 +243,10 @@ each assertion, decide:
 
 The supplied simultaneous-read/write assertion demonstrates the reporting path. Temporarily create
 a violation for every assertion you add and retain log or waveform evidence that it fires. Revert
-the deliberate violation afterward. Add at least two assertions of your own and update
-`MEMBER_ASSERTION_COUNT`; the final summary rejects a suite that leaves this stage empty.
+the deliberate violation afterward. Add at least two assertions of your own.
+
+Complete instruction constraints in `cpu_seq_item.svh` and external-port constraints in
+`cpu_xbar_item.svh` as part of the constrained-random phase described next.
 
 ### 6. Add constrained-random testing
 
@@ -271,7 +259,7 @@ unproductive combinations. The constraint exercises intentionally use three leve
 - **Partial constraints:** `c_imm_range`, `c_branch_target`, and `c_valid_window` contain a legal
   starting condition. Complete the missing part using the nearby contract.
 - **Open constraints:** design `c_mem_align`, `c_branch_taken_bias`, and `c_data_corners` from the
-  required behavior and supplied coverage model.
+  required behavior.
 
 For each constraint you complete, document the invalid state it removes, the useful distribution
 or dependency it encourages, and any legal behavior it makes unreachable.
