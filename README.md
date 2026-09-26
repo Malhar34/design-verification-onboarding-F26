@@ -154,6 +154,11 @@ The first-week plan is a preliminary implementation outline. Duplicate the detai
 add table rows as needed. In the final revision, record what changed after simulation. Do not silently
 rewrite the original reasoning when results contradict it; the revision history is part of the DV work.
 
+When planning constrained-random tests, look through `src/verilog/tb/cpu_seq_item.svh` for the
+instruction constraints, and `src/verilog/tb/cpu_xbar_item.svh` for the external-port constraints. 
+Use those constraint blocks to guide the plan for what stimulus is already covered and
+what still needs to be completed.
+
 Do not make a checklist containing only one friendly example per operation. Think about value
 classes, limits, state transitions, dependencies between adjacent operations, ownership changes,
 and interactions between otherwise-correct features. The point is to explain why the selected
