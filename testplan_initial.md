@@ -37,7 +37,7 @@ is written against those and not against CPU internals.
 2 things here for my plan
 
 **Final architectural state is not good enough evidence.** Reading registers and
-data memory after halt tells you where the CPU ended up, not how it actually gets there.
+data memory after halt tells you where the CPU ended up, not how it got there.
 The dSRAM taps let the monitor reconstruct every load and store as it happens,
 so tests that care about which memory operations occurred (address scaling,
 data[0] preservation, spurious writes) check the ordered stream rather than the end state.
