@@ -30,26 +30,25 @@ instructions and disappear from rendered Markdown.
 
 The chip exposes three things an external observer can use: the crossbar port
 (instruction SRAM, data SRAM, and a read-only register window), the
-`cpu_halted` pulse, and the data-SRAM observation taps (`dsram_en`,
-`dsram_write_en`, `dsram_addr`, `dsram_wdata`, `dsram_rdata`). Everything below
-is written against those, never against CPU internals.
+cpu_halted pulse, and the data-SRAM observation taps (dsram_en,
+dsram_write_en, dsram_addr, dsram_wdata, dsram_rdata). Everything below
+is written against those and not against CPU internals.
 
-Two consequences shape the plan.
+2 things here for my plan
 
-**Final architectural state is not sufficient evidence.** Reading registers and
-data memory after halt tells you where the CPU ended up, not how it got there.
+**Final architectural state is not good enough evidence.** Reading registers and
+data memory after halt tells you where the CPU ended up, not how it actually gets there.
 The dSRAM taps let the monitor reconstruct every load and store as it happens,
-so tests that care about *which* memory operations occurred (address scaling,
-`data[0]` preservation, spurious writes) check the ordered stream rather than
-the end state.
+so tests that care about which memory operations occurred (address scaling,
+data[0] preservation, spurious writes) check the ordered stream rather than the end state.
 
 **Tests are chosen by failure mode, not by opcode.** A checklist with one
 friendly case per instruction proves almost nothing: an implementation can pass
 `addi x1, x0, 5` while getting sign extension, shift masking, and address
 scaling all wrong. Each test below names the specific incorrect implementation
 it is designed to separate from the correct one. Where several instructions
-share a failure mode, one test covers them; where one instruction has several
-distinct failure modes, it gets several tests.
+share a failed mode, one test covers them. Where one instruction has several
+distinct failed modes, it gets several tests.
 
 The groupings are:
 
@@ -60,26 +59,26 @@ The groupings are:
 | Adjacent-instruction dependencies | 1.2, 1.26, 1.27 | results not committed before the next instruction reads them |
 | Address translation | 1.10–1.12 | byte-vs-word scaling, negative offsets |
 | Field aliasing | 1.14 | S-type immediate bits misread as a destination register |
-| Control flow | 1.16–1.19 | branch direction, condition polarity, backward targets |
+| Control flow | 1.16–1.19 | branch direction, backward targets |
 | Termination | 1.20–1.22 | halt stickiness, halt pulse shape, unsupported encodings |
 | Ownership and port protocol | 1.23–1.25 | memory handoff, read-only window, unmapped window |
 
 ---
 
-## Open questions to resolve before implementation
+## Open questions I resolved before implementation
 
 Recorded here deliberately. These affect how programs are written, and the
 revision history should show when they were answered.
 
 1. **Does `asm_instr`'s `imm` argument for `OP_BEQ` take a byte offset or a
-   word offset?** **Resolved 2026-09-26.** `encode()` in `cpu_seq_item.svh`
+   word offset?** Resolved 2026-09-26. `encode()` in `cpu_seq_item.svh`
    builds the B-type word as
    `{b_imm[12], b_imm[10:5], rs2, rs1, 3'b000, b_imm[4:1], b_imm[11], 7'b1100011}`,
    which is the standard RISC-V B-type layout with `imm[0]` implicit. The
-   argument is therefore a **byte offset** relative to the branch
+   argument is therefore a byte offset relative to the branch
    instruction's own address. All branch programs in this plan are written on
    that basis and need no adjustment.
-2. **What does `asm_instr(.op(OP_NOP))` encode to?** **Resolved 2026-09-26.**
+2. **What does `asm_instr(.op(OP_NOP))` encode to?** Resolved 2026-09-26.
    `encode()` has `default: word = '0;`, so an `OP_NOP` item produces
    `32'h0000_0000`. That word's opcode field is `7'b0000000`, which matches no
    supported instruction, so a correct decoder must take its default path and
@@ -91,7 +90,7 @@ revision history should show when they were answered.
 4. **Does an external write attempted while `cpu_active` is high get dropped,
    queued, or corrupt memory?** The README says the port "is serviced only
    while the CPU is disabled," which does not by itself say what happens to a
-   request made anyway. Test 1.23 covers this once the contract is known.
+   request made anyway. Test 1.23 covers this once it is is known.
 
 ---
 
@@ -106,7 +105,7 @@ revision history should show when they were answered.
 | 1.3 | `x0_write_protection` | Writes targeting x0 are discarded | x0 reads 0 after both an `addi` and an `add` target it | Planned |
 | 1.4 | `x0_source_reads_zero` | x0 reads as zero regardless of attempted writes | Arithmetic using x0 as a source behaves as if it were 0 | Planned |
 | 1.5 | `add_value_classes` | Register-register add including 32-bit wraparound | Positive, mixed-sign, and overflow-wrap cases correct | Planned |
-| 1.6 | `sub_value_classes` | Subtraction producing positive, negative, and zero results | Negative result is correct two's complement; self-subtract is 0 | Planned |
+| 1.6 | `sub_value_classes` | Subtraction producing positive, nagative, and zero results | Negative reuslt is correct two's complement. Self subtract is 0 | Planned |
 | 1.7 | `sll_shift_amount_masking` | Shift amount uses only the low 5 bits of rs2 | Shifts of 0, 31, 32, and 33 behave as 0, 31, 0, and 1 | Planned |
 | 1.8 | `srl_is_logical` | Right shift fills with zeros, not the sign bit | 0x80000000 >> 1 yields 0x40000000, not 0xC0000000 | Planned |
 | 1.9 | `shift_by_computed_amount` | Shift amount comes from a register, not an immediate | Shift by a runtime-computed value is correct | Planned |
@@ -125,9 +124,9 @@ revision history should show when they were answered.
 | 1.22 | `unsupported_encoding_is_nop` | An unsupported encoding behaves as a no-op | PC advances; surrounding instructions unaffected | Planned |
 | 1.23 | `ownership_handoff` | Memory ownership transfers at start and halt | External accesses succeed before start and after halt; `cpu_active` tracks the transition | Planned |
 | 1.24 | `reg_window_read_only` | The register window rejects writes | A program-set register value survives an attempted external write | Planned |
-| 1.25 | `unmapped_window` | Accesses to `addr[13:12] == 2'b11` | The port behaves per its contract without hanging the testbench | Planned |
+| 1.25 | `unmapped_window` | Accesses to `addr[13:12] == 2'b11` | The port behaves the way detailed in its descriptoin without hanging the testbench | Planned |
 | 1.26 | `store_then_load_same_word` | A load immediately after a store to the same word | The load returns the just-stored value | Planned |
-| 1.27 | `branch_on_just_written_reg` | A branch whose condition register was written by the previous instruction | The branch resolves on the new value | Planned |
+| 1.27 | `branch_on_just_written_reg` | A branch whose condition regsiter was written by the previous instruction | The branch resolves on the new value | Planned |
 
 ---
 
@@ -211,7 +210,7 @@ prog = '{
 | x4 | `32'h0000_0000` | 104 − 104 |
 
 **Pass criteria:** All four correct. If the register file returns stale data,
-x2 is −3 and the rest of the chain is wrong.
+x2 is −3 and the rest of the chain is not right.
 
 **Final result:** _(to be filled after simulation)_
 
@@ -221,7 +220,7 @@ x2 is −3 and the rest of the chain is wrong.
 
 **Functionality:** Writes targeting x0 are discarded.
 
-**Why this test:** Two separate mechanisms could fail — an instruction with
+**Why this test:** Two separate mechanisms could fail. An instruction with
 `rd == 0` must not modify the register array, and reads of x0 must return zero
 regardless. This test drives both an I-type and an R-type write at x0, then
 reads x0 as a source to confirm it is still zero.
@@ -251,7 +250,7 @@ prog = '{
 even if the register window read of x0 is hardwired to zero while the
 underlying storage was corrupted.
 
-**Final result:** _(to be filled after simulation)_
+**Final result:** _(I will fill out after simulation)_
 
 ---
 
@@ -286,7 +285,7 @@ prog = '{
 **Pass criteria:** Both subtractions correct. x3 also confirms a negative
 result from the ALU.
 
-**Final result:** _(to be filled after simulation)_
+**Final result:** _(I will fill out after the simulation)_
 
 ---
 
@@ -326,7 +325,7 @@ prog = '{
 
 **Pass criteria:** x4 is 0, not a saturated or sign-flipped value.
 
-**Final result:** _(to be filled after simulation)_
+**Final result:** _(I will fill out after simulation)_
 
 ---
 
@@ -364,7 +363,7 @@ prog = '{
 **Pass criteria:** All three correct. If x3 is 8, the decoder is treating `sub`
 as `add`.
 
-**Final result:** _(to be filled after simulation)_
+**Final result:** _(I will fill out after simulation)_
 
 ---
 
@@ -408,7 +407,7 @@ prog = '{
 **Pass criteria:** x7 is 1 and x9 is 2. An unmasked implementation gives 0 for
 both.
 
-**Final result:** _(to be filled after simulation)_
+**Final result:** _(I will fill out after simulation)_
 
 ---
 
@@ -446,7 +445,7 @@ prog = '{
 **Pass criteria:** x5 is `0x4000_0000`. Any value with the top bit set means
 the shift is arithmetic.
 
-**Final result:** _(to be filled after simulation)_
+**Final result:** _(I will fill out after simulation)_
 
 ---
 
@@ -483,7 +482,7 @@ prog = '{
 
 **Pass criteria:** x5 is 48.
 
-**Final result:** _(to be filled after simulation)_
+**Final result:** _(I will fill out after simulation)_
 
 ---
 
@@ -568,7 +567,7 @@ prog = '{
 value. If sign extension fails on the store, the write lands near word 6
 (16 + 2040 in bytes) instead.
 
-**Final result:** _(to be filled after simulation)_
+**Final result:** _(I will fill out after simulation)_
 
 ---
 
@@ -620,7 +619,7 @@ prog = '{
 addresses 1, 2, and 3 — checking the address stream directly rather than
 inferring it from the loaded data.
 
-**Final result:** _(to be filled after simulation)_
+**Final result:** _(I will fill out after simulation)_
 
 ---
 
@@ -668,7 +667,7 @@ The second criterion is the stronger one. The program deliberately mixes
 non-store instructions between the stores so that a write-enable asserted in
 the wrong state would show up as an extra `CPU_STORE`.
 
-**Final result:** _(to be filled after simulation)_
+**Final result:** _(I will fill out after simulation)_
 
 ---
 
@@ -708,7 +707,7 @@ prog = '{
 **Pass criteria:** x4 still holds 123. If the store writes a register, x4 holds
 the computed store address (4) instead.
 
-**Final result:** _(to be filled after simulation)_
+**Final result:** _(I will fill out after simulation)_
 
 ---
 
@@ -742,7 +741,7 @@ prog = '{
 
 **Pass criteria:** Both zero. If the load reached the register array, x2 is 14.
 
-**Final result:** _(to be filled after simulation)_
+**Final result:** _(I will fill out after simulation)_
 
 ---
 
@@ -780,7 +779,7 @@ prog = '{
 **Note:** Branch offset is a byte offset from the branch instruction's own
 address, confirmed against `encode()` in `cpu_seq_item.svh`.
 
-**Final result:** _(to be filled after simulation)_
+**Final result:** _(I will fill out after simulation)_
 
 ---
 
@@ -816,7 +815,7 @@ prog = '{
 
 **Pass criteria:** x2 is 1.
 
-**Final result:** _(to be filled after simulation)_
+**Final result:** _(I will fill out after simulation)_
 
 ---
 
@@ -870,7 +869,7 @@ rather than discovered late.
 reach `ebreak`. The bounded halt timeout must record a failure and reset rather
 than hanging the suite.
 
-**Final result:** _(to be filled after simulation)_
+**Final result:** _(I will fill out after simulation)_
 
 ---
 
@@ -913,7 +912,7 @@ intentionally supports only the x0 form, this test documents that limitation
 rather than reporting a defect; the distinction should be recorded in the final
 plan.
 
-**Final result:** _(to be filled after simulation)_
+**Final result:** _(I will fill out after simulation)_
 
 ---
 
@@ -948,7 +947,7 @@ prog = '{
 **Pass criteria:** One halt observation, not zero and not many. x1 confirms the
 instruction before `ebreak` retired rather than being lost to an early halt.
 
-**Final result:** _(to be filled after simulation)_
+**Final result:** _(I will fill out after simulation)_
 
 ---
 
@@ -985,7 +984,7 @@ prog = '{
 **Pass criteria:** x2 and `dmem[1]` are zero, and the monitor observes zero
 `CPU_STORE` transactions.
 
-**Final result:** _(to be filled after simulation)_
+**Final result:** _(I will fill out after simulation)_
 
 ---
 
@@ -1027,7 +1026,7 @@ out, the unsupported encoding stalled the pipeline.
 `default` arm of `encode()`. Opcode field `7'b0000000` matches nothing in the
 supported set.
 
-**Final result:** _(to be filled after simulation)_
+**Final result:** _(I will fill out after simulation)_
 
 ---
 
@@ -1081,7 +1080,7 @@ expected sequence, and the CPU observed the data written before it started.
 `cpu_active` is high depends on open question 4 and will be added once the
 contract is confirmed.
 
-**Final result:** _(to be filled after simulation)_
+**Final result:** _(I will fill out after simulation)_
 
 ---
 
@@ -1119,7 +1118,7 @@ prog = '{
 **Pass criteria:** The readback is 64. If it is the sentinel, the window is
 writable and the read path is untrustworthy.
 
-**Final result:** _(to be filled after simulation)_
+**Final result:** _(I will fill out after simulation)_
 
 ---
 
@@ -1145,7 +1144,7 @@ will assert the documented contract, whichever it is.
 classifies it correctly. A hang is a testbench defect, not a DUT defect, and
 this test exists partly to prove the driver handles the case.
 
-**Final result:** _(to be filled after simulation)_
+**Final result:** _(I will fill out after simulation)_
 
 ---
 
@@ -1184,7 +1183,7 @@ prog = '{
 
 **Pass criteria:** x2 is 88. If it is `0xDEAD_BEEF`, the load raced the store.
 
-**Final result:** _(to be filled after simulation)_
+**Final result:** _(I will fill out after simulation)_
 
 ---
 
@@ -1225,7 +1224,7 @@ prog = '{
 **Pass criteria:** x2 is 0. If the branch read the stale value 5, it falls
 through and x2 becomes 1.
 
-**Final result:** _(to be filled after simulation)_
+**Final result:** _(I will fill out after simulation)_
 
 ---
 
@@ -1251,7 +1250,7 @@ through and x2 becomes 1.
 | `c_align` | Provided | Forces external addresses to be word-aligned, matching the port requirement that accesses are word-aligned. | No member change |
 | `c_valid_window` | Partial | Must restrict `addr[13:12]` to mapped windows for ordinary traffic. Planned completion excludes `2'b11` from the default distribution while leaving a directed path for the unmapped-window test in 1.25. | _(to be completed)_ |
 | `c_reg_read_only` | Provided | Prevents generating writes to the register window, which is read-only. Without it, random traffic would attempt illegal writes and the scoreboard would need to special-case them. | No member change |
-| `c_data_corners` | Open | Must bias external write data toward corner values rather than uniformly random 32-bit numbers. Planned set: 0, 1, `0xFFFF_FFFF`, `0x8000_0000`, `0x7FFF_FFFF`, and values with a single bit set. These are the values most likely to expose sign, carry, and truncation bugs when later loaded and operated on. | _(to be completed)_ |
+| `c_data_corners` | Open | Must bias external write data toward corner values rather than uniformly random 32-bit numbers. Planned set: 0, 1, `0xFFFF_FFFF`, `0x8000_0000`, `0x7FFF_FFFF`, and values with a single bit set. These are the values most likely to expose sign, carry, and truncation bugs when later loaded and operated on. | _(I will complete this)_ |
 
 ## Random-program test
 
