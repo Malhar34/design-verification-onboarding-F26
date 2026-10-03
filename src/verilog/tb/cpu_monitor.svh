@@ -64,22 +64,45 @@ class cpu_monitor #(int DataSize=32, int AddrSize=14);
 
     // Match each external read request with its response
     task observe_external_read();
-        // TODO: Match each external read request with its response. Save
-        // the address when the request starts, and send one XBAR_READ when rready
-        // shows that rdata is valid. How should you handle register file vs SRAM
-        // reads?
+	static logic [31:0] saved_addr;
+	static bit read_pending = 1'b0;
 
-        $fatal(1, "Implement cpu_monitor.observe_external_read");
+	if (cpuVif.cb.r_en === 1'b1) begin
+		if (read_pending == 1'b0) begin
+			saved_addr = cpuVif.cb.addr;
+			read_pending = 1'b1;
+		end
+		if (cpuVif.cb.rready === 1'b1) begin
+			send(XBAR_READ, saved_addr, cpuVif.cb.rdata, 1'b0);
+			read_pending = 1'b0;
+		end
+	end else begin
+		read_pending = 1'b0;
+	end
     endtask: observe_external_read
 
     // Report each CPU data-memory request once
     task observe_cpu_memory();
-        // TODO: Report each CPU data-memory request once. Send a CPU_LOAD
-        // when its read data returns and a CPU_STORE when its write completes,
-        // even if the request stays active during an SRAM wait. Clear saved state
-        // after the request ends.
+	static bit prev_en = 1'b0;
+	static bit prev_we = 1'b0;
+	static logic [31:0] prev_addr = '0;
+	static logic [31:0] prev_wdata = '0;
 
-        $fatal(1, "Implement cpu_monitor.observe_cpu_memory");
+	if (prev_en) begin
+		if (prev_we) begin
+			send (CPU_STORE, prev_addr, prev_wdata, 1'b1);
+		end else begin
+			send(CPU_LOAD, prev_addr, cpuVif.cb.dsram_rdata, 1'b0);
+		end
+	end
+
+	prev_en = cpuVif.cb.dsram_en;
+	if(prev_en) begin
+		prev_we = cpuVif.cb.dsram_write_en;
+		prev_addr = cpuVif.cb.dsram_addr;
+		prev_wdata = cpuVif.cb.dsram_wdata;
+	end
+
     endtask: observe_cpu_memory
 
     // Monitor the DUT once per clock and pass new events to the scoreboard

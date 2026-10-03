@@ -31,16 +31,24 @@ class cpu_seq_item #(int DataSize=32, int AddrSize=14);
         rs2 dist { 0 :/ 10, [1:7] :/ 70, [8:31] :/ 20 };
     }
 
-    // TODO: Complete the immediate constraint
     constraint c_imm_range {
         imm >= -2048;
+	imm <= 2047;
+	imm dist {
+	    -2048 :/ 1,
+	    -1 :/ 1,
+	    0 :/ 2,
+	    1 :/ 1,
+	    2047 :/ 1,
+	    [-2047:2046] :/ 4
+	};
     }
 
-    // TODO: Keep load/store offsets word-aligned. Addresses depend on
-    // runtime rs1 values, so tests must initialize address registers
-    // such that accesses stay inside data memory range.
     constraint c_mem_align {
-        1;
+        rs1 dist {0 :/ 5, [1:31] :/ 1};
+	imm % 4 == 0;
+	imm >= 0;
+	imm < 4096;
     }
 
     // Immediate values are constrained to 0 during these register-only instructions
@@ -48,9 +56,12 @@ class cpu_seq_item #(int DataSize=32, int AddrSize=14);
         (op inside {OP_ADD, OP_SUB, OP_SLL, OP_SRL}) -> imm == 0;
     }
 
-    // TODO: Complete the branch constraint to avoid loops
     constraint c_branch_target {
-        (op == OP_BEQ) -> (imm % 4 == 0) && (imm >= 4);
+        (op == OP_BEQ) ->{
+	   imm % 4 == 0;
+	   imm >= 4;
+	   imm <= (prog_len - idx) * 4;
+	}
     }
 
     // Prevent a branch in the final generated slot
@@ -58,10 +69,9 @@ class cpu_seq_item #(int DataSize=32, int AddrSize=14);
         (prog_len - idx < 2) -> op != OP_BEQ;
     }
 
-    // TODO: Randomly-generated registers rarely compare equal. Bias the operands
-    // so both branch outcomes occur often enough to close coverage.
     constraint c_branch_taken_bias {
-        1;
+        rs2 dist {0 :/ 3, [1:31] :/ 1};
+        rs1 dist {0 :/ 1, [1:31] :/ 1};
     }
 
     // Constructor

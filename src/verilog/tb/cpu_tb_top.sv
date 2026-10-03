@@ -190,25 +190,66 @@ module cpu_tb_top;
 
 
         // DIRECTED TESTS
-        drv.reset_task();
-        init_memories();
+	begin
+	   logic [31:0] prog [$];
 
-        // TODO: Add directed test cases from the test plan
-        // Use the existing helpers
+           drv.reset_task();
+           init_memories();
+
+           // Use the existing helpers
+	   // Test: addi_imm_limits (Sign extension limits)
+	   prog = '{
+               asm_instr(.op(OP_ADDI), .rd(1), .rs1(0), .imm(2047)),
+               asm_instr(.op(OP_ADDI), .rd(2), .rs1(0), .imm(-2048)),
+	       asm_instr(.op(OP_ADDI), .rd(3), .rs1(0), .imm(-1)),
+               EBREAK_WORD
+           };
+	   // Environemtn's helper
+	   run_directed("addi_imm_limits", prog);
+	
+	   // Test: raw_dependency_chain (Read after write)
+	   prog = '{
+	       asm_instr(.op(OP_ADDI), .rd(1), .rs1(0), .imm(7)),
+	       asm_instr(.op(OP_ADDI), .rd(2), .rs1(1), .imm(-3)),
+	       EBREAK_WORD
+	   };
+	   run_directed("raw_dependency_chain", prog);
+	
+	   //feedback test: External memory boundaries( MAx 4KB SRAM word address)
+	   drv.xbar_write(32'h0000_0FFC, 32'hDEAD_BEEF);
+	   drv.xbar_read(32'h0000_0FFC);
+
+	   // feedback Test: External halt request against an infitnite loop
+	   prog = '{
+	       asm_instr(.op(OP_BEQ), .rs1(0), .rs2(0), .imm(0)),
+	       EBREAK_WORD
+	   };
+	   drv.start_cpu(); // start waiting for halt
+	   #50; // goes through the loop for a little bit
+	   drv.halt_cpu_now(); //Interupt the infiti nite loop externally
+
+	   // Feedback Tets: Reset during CPU active
+	   drv. start_cpu();
+	   #30;
+	   cpu_if.reset = 1'b1;
+	   #20;
+	   cpu_if.reset = 1'b0;
         
-        // Example Test: addi with a positive immediate
-        prog = '{
-            asm_instr(.op(OP_ADDI), .rd(1), .rs1(0), .imm(5)),
-            asm_instr(.op(OP_ADDI), .rd(2), .rs1(1), .imm(100)),
-            EBREAK_WORD
-        };
-        run_directed("addi_positive", prog);
-
+           // Example Test: addi with a positive immediate
+            prog = '{
+               asm_instr(.op(OP_ADDI), .rd(1), .rs1(0), .imm(5)),
+               asm_instr(.op(OP_ADDI), .rd(2), .rs1(1), .imm(100)),
+               EBREAK_WORD
+           };
+           run_directed("addi_positive", prog);
+	
+	end
 
 
         // CONSTRAINED-RANDOM TESTS
-        // TODO: Add constrained-randomized testing for cpu_seq_item and cpu_xbar_item
         // Use the existing helpers
+	seqr.gen_program(NUM_RANDOM_PROGRAMS);
+	seqr.gen_xbar(NUM_RANDOM_XBAR);
 
 
         // TEST FINISH
@@ -256,7 +297,18 @@ module cpu_tb_top;
     end
 
     wire rst = cpu_if.reset;
-    // TODO: Add the required protocol or control assertions from the testplan
+
+    // 3.1: No_Store_TO_DATA0 - The CPU never asserts a data-SRAM write to word address 0
+    NO_STORE_TO_DATA0:
+      assert property (@(posedge cpu_if.clk) disable iff (rst)
+	(cpu_if.cpu_active && cpu_if.dsram_en && cpu_if.dsram_write_en) |-> (cpu_if.dsram_addr != 10'd0))
+      else $error("Assertion Violation: CPU asserted a data-SRAM write to word address 0");
+
+   // 3.2: NO_MEM_ACCESS_WHEN_IDLE - The CPU does not drive a data-SRAM access while cpu_active is low
+   NO_MEM_ACCESS_WHEN_IDLE:
+     assert property (@(posedge cpu_if.clk) disable iff (rst)
+	(!cpu_if.cpu_active) |-> (!cpu_if.dsram_en))
+     else $error("Assertion Violation: CPU drove a data-SRAM access while not active");
 
     // Example assertion
     // It checks one interface rule and sends failures through the testbench counter

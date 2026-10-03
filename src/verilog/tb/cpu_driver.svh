@@ -76,13 +76,30 @@ class cpu_driver #(int DataSize=32, int AddrSize=14);
             $error($stime, " Drv: external read address 0x%0x is not word aligned\n", addr);
         end
 
-        // TODO: Keep the request stable until rready, capture the returned
-        // data, and set a timeout for the response
+	cpuVif.cb.addr <= addr;
+	cpuVif.cb.r_en <= 1'b1;
+	cpuVif.cb.w_en <= 1'b0;
 
         timed_out = 1'b0;
         count     = 0;
+	
+	forever begin
+		@(cpuVif.cb);
+		count++;
+		
+		if (cpuVif.cb.rready === 1'b1) begin
+			break;
+		end
 
-        $fatal(1, "implement cpu_driver.xbar_read");
+		if (count > 100) begin
+			timed_out = 1'b1;
+			$error($stime, " Drv: external read timeout at 0x%0x\n", addr);
+			break;
+		end
+	end
+	
+	cpuVif.cb.r_en <= 1'b0;	
+
     endtask: xbar_read
 
     // Drive a start request for one CPU run
@@ -132,10 +149,27 @@ class cpu_driver #(int DataSize=32, int AddrSize=14);
     // Stop a program through an external halt and wait for memory ownership
     // to return to the external port
     task halt_cpu_now();
-        // TODO: Assert an external halt request and wait, with a bound,
-        // until ownership returns to the external port
+	int count = 0;
 
-        $fatal(1, "TODO: implement cpu_driver.halt_cpu_now");
+	// Pulse the halt signal for one cycle
+	cpuVif.cb.halt_cpu <= 1'b1;
+	@(cpuVif.cb);
+	cpuVif.cb.halt_cpu <= 1'b0;
+
+	forever begin
+		if (cpuVif.cb.cpu_active === 1'b0) begin
+			break;
+		end
+
+		if (count > 100) begin
+			$error($stime, " Drv: timeout waiting for CPU to halt\n");
+			break;
+		end
+
+		@(cpuVif.cb);
+		count++;
+	end
+
     endtask: halt_cpu_now
 
     // Main driver loop. Keeps taking transactions from the mailbox and

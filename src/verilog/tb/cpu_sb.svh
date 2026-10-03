@@ -145,45 +145,51 @@ class cpu_sb #(int DataSize=32, int AddrSize=14);
 
                 // Run the reference model when CPU execution begins
                 CPU_START: begin
-                    // TODO: Load both expected memories through the reference-model
-                    // API and run it with MAX_REF_INSTR as its bound. Save predicted
-                    // registers and the ordered store queue, reset per-program counters,
-                    // and mark the program active.
+			ref_model.load_imem(expected_imem);
+			ref_model.load_dmem(expected_dmem);
 
-                    fail("CPU_START prediction is not implemented");
+			ref_model.clear_state();
+			ref_model.run(MAX_REF_INSTR);
+
+			expected_regs = ref_model.regs;
+			expected_stores = ref_model.store_queue;
+
+			observed_stores = 0;
+			program_running = 1'b1;
+
                 end
 
                 // Each CPU store must match the next expected store
                 CPU_STORE: begin
-                    ref_store_t expected_store;
-
-                    // TODO: Count the observation and compare it with the next
-                    // predicted store, including both address/data and ordering. Detect
-                    // an unexpected store when the queue is empty. Expected memory must
-                    // follow the observed write even if the comparison fails; a write
-                    // completing after reset is real but has no active-program oracle.
-
-                    fail("CPU_STORE checking is not implemented");
+                    ref_store_t exp_store;
+	            if (expected_stores.size() == 0) begin
+			fail($sformatf("Unexpected CPU store to addr 0x%0x with data 0x%0x", trans.addr, trans.data));
+		    end else begin
+			exp_store = expected_stores.pop_front();
+			if(trans.addr != exp_store.addr || trans.data != exp_store.data) begin
+				fail($sformatf("Store mismatch: expected [0x%0x] <- 0x%0x, got [0x%0x] <- 0x%0x", 
+                                           exp_store.addr, exp_store.data, trans.addr, trans.data));	
+			end
+			observed_stores++;
+		    end
                 end
 
                 // Each CPU load must return the current expected memory value
                 CPU_LOAD: begin
                     logic [31:0] expected;
+		    if(trans.data != expected_dmem[trans.addr]) begin
+			fail($sformatf("Load mismatch at addr 0x%0x: expected 0x%0x, got 0x%0x", 
+                                       trans.addr, expected_dmem[trans.addr], trans.data));
+		    end
 
-                    // TODO: Obtain the expected word from current expected memory,
-                    // count the check/load, and compare the returned data with expected
-                    // memory data. Include the word index and both values in a failure.
-
-                    fail("CPU_LOAD checking is not implemented");
                 end
 
                 // A normal halt must finish all expected CPU activity
                 CPU_HALT: begin
-                    // TODO: Check that every expected store was observed, compare
-                    // final data memory with the reference model, and mark the 
-                    // program inactive.
-
-                    fail("CPU_HALT checking is not implemented");
+			program_running = 1'b0;
+			if (expected_stores.size() > 0) begin
+				fail($sformatf("CPU halted before completing %0d expected stores", expected_stores.size()));
+			end
                 end
 
                 default: ;
