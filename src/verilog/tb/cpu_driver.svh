@@ -33,10 +33,19 @@ class cpu_driver #(int DataSize=32, int AddrSize=14);
 
     // Put the DUT into a known reset state
     task reset_task();
-        // TODO: Drive all requests inactive, hold reset for several clock
-        // cycles, then release it and give the interface time to settle
+	cpuVif.cb.reset <= 1'b1;
+	cpuVif.cb.en_cpu <= 1'b0;
+	cpuVif.cb.halt_cpu <= 1'b0;
+	cpuVif.cb.addr <= '0;
+	cpuVif.cb.wdata <= '0;
+	cpuVif.cb.w_en <= 1'b0;
+	cpuVif.cb.r_en <= 1'b0;
+	
+	repeat (5) @(cpuVif.cb);
+	cpuVif.cb.reset <= 1'b0;
+	repeat (2) @(cpuVif.cb);
 
-        $fatal(1, "implement cpu_driver.reset_task");
+
     endtask: reset_task
 
     // Send one write through the DUT's external memory port
@@ -45,10 +54,17 @@ class cpu_driver #(int DataSize=32, int AddrSize=14);
             $error($stime, " Drv: external write address 0x%0x is not word aligned\n", addr);
         end
 
-        // TODO: Drive one external write through the clocking block for one request, 
-        // then return the port to idle
+	cpuVif.cb.addr <= addr;
+	cpuVif.cb.wdata	<= data;
+	cpuVif.cb.w_en <= 1'b1;
 
-        $fatal(1, "implement cpu_driver.xbar_write");
+
+	@(cpuVif.cb);
+
+	cpuVif.cb.w_en <= 1'b0;
+
+	@(cpuVif.cb);
+
     endtask: xbar_write
 
     // Send one read through the external memory port and wait for its data
@@ -71,25 +87,37 @@ class cpu_driver #(int DataSize=32, int AddrSize=14);
 
     // Drive a start request for one CPU run
     task start_cpu();
-        // TODO: Pulse en_cpu
+	cpuVif.cb.en_cpu <= 1'b1;
+	@(cpuVif.cb);
+	cpuVif.cb.en_cpu <= 1'b0;
 
-        $fatal(1, "implement cpu_driver.start_cpu");
     endtask: start_cpu
 
     // Wait for the CPU to halt, or fail after the allowed number of cycles
     task wait_for_halt(output int cycles, input int max_cycles=0);
         int limit;
+	bit halted;
 
         limit  = (max_cycles == 0) ? run_timeout : max_cycles;
         cycles = 0;
+	halted = 1'b0;
+	last_run_completed = 1'b0;
 
-        // TODO: Check cpu_halted on each cycle and report how many cycles
-        // ran. Set last_run_completed only after a real halt. On a timeout, increment
-        // timeouts and leave the flag low so the testbench can recover.
+	while (!halted && cycles < limit) begin
+		@(cpuVif.cb);
+		cycles++;
+		if (cpuVif.cb.cpu_halted) begin
+			halted = 1'b1;
+		end
+	end
 
-        last_run_completed = 1'b0;
+	if (halted) begin
+		last_run_completed = 1'b1;
+	end else begin
+		timeouts++;
+		$error($stime, " Drv: CPU did not halt within %0d cycles\n", limit);
+	end
 
-        $fatal(1, "implement cpu_driver.wait_for_halt");
     endtask: wait_for_halt
 
     // Start CPU and wait for it to halt

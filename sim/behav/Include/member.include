@@ -8,6 +8,8 @@
 ../../src/verilog/cpu/cpu_pkg.sv
 ../../src/verilog/cpu/reg_file.sv
 ../../src/verilog/cpu/fetch.sv
+../../src/verilog/cpu/decode.sv
+../../src/verilog/cpu/alu.sv
 ../../src/verilog/cpu/cpu_top.sv
 
 // Member testbench

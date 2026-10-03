@@ -49,10 +49,17 @@ class cpu_monitor #(int DataSize=32, int AddrSize=14);
     task send(input trans_kind_e kind,
               input logic [AddrSize-1:0] addr, input logic [DataSize-1:0] data,
               input logic is_write=1'b0);
+	cpu_xbar_item #(DataSize, AddrSize) item;
 
-        // TODO: Create and send an xbar transaction through the mailbox
+	item = new();
+	item.kind = kind;
+	item.addr = addr;
+	item.data = data;
+	item.is_write = is_write;
 
-        $fatal(1, "TODO: Implement cpu_monitor.send");
+
+	mon_box.put(item);
+
     endtask: send
 
     // Match each external read request with its response
