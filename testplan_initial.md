@@ -173,7 +173,7 @@ prog = '{
 **Pass criteria:** All five registers match after halt. x2 and x3 specifically
 distinguish sign extension from zero padding.
 
-**Final result:** _(to be filled after simulation)_
+**Final result:** _(I will fill out after simulation)_
 
 ---
 
@@ -212,7 +212,7 @@ prog = '{
 **Pass criteria:** All four correct. If the register file returns stale data,
 x2 is −3 and the rest of the chain is not right.
 
-**Final result:** _(to be filled after simulation)_
+**Final result:** _(I will fill out after simulation)_
 
 ---
 
