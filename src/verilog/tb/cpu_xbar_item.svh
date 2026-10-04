@@ -20,6 +20,7 @@ class cpu_xbar_item #(int DataSize=32, int AddrSize=14);
 	
     constraint c_valid_window {
         addr[13:12] inside {2'b00, 2'b01, 2'b10};
+        (addr[13:12] == 2'b10) -> (addr[11:2] < 10'd32);
     }
 
     // The register file can be read but not written through this port

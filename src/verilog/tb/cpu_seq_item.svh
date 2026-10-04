@@ -33,22 +33,23 @@ class cpu_seq_item #(int DataSize=32, int AddrSize=14);
 
     constraint c_imm_range {
         imm >= -2048;
-	imm <= 2047;
-	imm dist {
-	    -2048 :/ 1,
-	    -1 :/ 1,
-	    0 :/ 2,
-	    1 :/ 1,
-	    2047 :/ 1,
-	    [-2047:2046] :/ 4
-	};
+	    imm <= 2047;
+	    imm dist {
+	        -2048 :/ 1,
+	        -1 :/ 1,
+	        0 :/ 2,
+	        1 :/ 1,
+	        2047 :/ 1,
+	        [-2047:2046] :/ 4
+	    };
     }
 
     constraint c_mem_align {
-        rs1 dist {0 :/ 5, [1:31] :/ 1};
-	imm % 4 == 0;
-	imm >= 0;
-	imm < 4096;
+        (op inside {OP_LW, OP_SW}) -> {
+            imm % 4 == 0;
+	        imm >= 0;
+	        imm < 4096;
+        }
     }
 
     // Immediate values are constrained to 0 during these register-only instructions
@@ -70,8 +71,7 @@ class cpu_seq_item #(int DataSize=32, int AddrSize=14);
     }
 
     constraint c_branch_taken_bias {
-        rs2 dist {0 :/ 3, [1:31] :/ 1};
-        rs1 dist {0 :/ 1, [1:31] :/ 1};
+        (op == OP_BEQ) -> rs2 dist { rs1 := 1, [0:31] :/ 1 };
     }
 
     // Constructor
