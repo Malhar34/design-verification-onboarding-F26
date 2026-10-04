@@ -64,45 +64,48 @@ class cpu_monitor #(int DataSize=32, int AddrSize=14);
 
     // Match each external read request with its response
     task observe_external_read();
-	static logic [31:0] saved_addr;
-	static bit read_pending = 1'b0;
+        // first is there is a pending read whose response has arrived?
+	    if (pending_read && cpuVif.cb.rready) begin
+		    send(XBAR_READ, pending_read_addr, cpuVif.cb.rdata, 1'b0);
+            pending_read = 1'b0;
+		end
 
-	if (cpuVif.cb.r_en === 1'b1) begin
-		if (read_pending == 1'b0) begin
-			saved_addr = cpuVif.cb.addr;
-			read_pending = 1'b1;
-		end
-		if (cpuVif.cb.rready === 1'b1) begin
-			send(XBAR_READ, saved_addr, cpuVif.cb.rdata, 1'b0);
-			read_pending = 1'b0;
-		end
-	end else begin
-		read_pending = 1'b0;
-	end
+        // Then is there a new request visible?
+		else if (cpuVif.cb.r_en && !pending_read) begin
+            if (window_of(cpuVif.cb.addr) == WIN_REG && cpuVif.cb.rready) begin
+                // register window asnwers immediately
+			    send(XBAR_READ, cpuVif.cb.addr, cpuVif.cb.rdata, 1'b0);
+		    end else begin
+                pending_read = 1'b1;
+                pending_read_addr = cpuVif.cb.addr;
+	        end
+        end
     endtask: observe_external_read
 
     // Report each CPU data-memory request once
     task observe_cpu_memory();
-	static bit prev_en = 1'b0;
-	static bit prev_we = 1'b0;
-	static logic [31:0] prev_addr = '0;
-	static logic [31:0] prev_wdata = '0;
+        // take away anything that was take in last cycle
+	    if (prev_store_valid) begin
+			send (CPU_STORE, prev_store_addr, prev_store_data, 1'b1);
+            prev_store_valid = 1'b0;
+		end 
 
-	if (prev_en) begin
-		if (prev_we) begin
-			send (CPU_STORE, prev_addr, prev_wdata, 1'b1);
-		end else begin
-			send(CPU_LOAD, prev_addr, cpuVif.cb.dsram_rdata, 1'b0);
+        if (prev_load_valid) begin
+			send(CPU_LOAD, prev_load_addr, cpuVif.cb.dsram_rdata, 1'b0);
+            prev_load_valid = 1'b0;
 		end
-	end
 
-	prev_en = cpuVif.cb.dsram_en;
-	if(prev_en) begin
-		prev_we = cpuVif.cb.dsram_write_en;
-		prev_addr = cpuVif.cb.dsram_addr;
-		prev_wdata = cpuVif.cb.dsram_wdata;
-	end
-
+        // Capture a new request for the next cycle
+        if (cpuVif.cb.cpu_active && cpuVif.cb.dsram_en) begin
+            if (cpuVif.cb.dsram_write_en) begin
+                prev_store_valid = 1'b1;
+                prev_store_addr = cpuVif.cb.dsram_addr;
+                prev_store_data = cpuVif.cb.dsram_wdata;
+            end else begin
+                prev_load_valid = 1'b1;
+                prev_load_addr = cpuVif.cb.dsram_addr;
+            end
+	    end
     endtask: observe_cpu_memory
 
     // Monitor the DUT once per clock and pass new events to the scoreboard

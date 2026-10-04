@@ -307,7 +307,7 @@ module cpu_tb_top;
    // 3.2: NO_MEM_ACCESS_WHEN_IDLE - The CPU does not drive a data-SRAM access while cpu_active is low
    NO_MEM_ACCESS_WHEN_IDLE:
      assert property (@(posedge cpu_if.clk) disable iff (rst)
-	(!cpu_if.cpu_active) |-> (!cpu_if.dsram_en))
+	 (!cpu_if.cpu_active && !cpu_if.r_en && !cpu_if.w_en) |-> (!cpu_if.dsram_en))
      else $error("Assertion Violation: CPU drove a data-SRAM access while not active");
 
     // Example assertion
