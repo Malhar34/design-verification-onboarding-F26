@@ -364,6 +364,67 @@ module cpu_tb_top;
         };
         run_directed("min_beq_bit2", prog);
 
+        prog = '{
+            asm_instr(.op(OP_ADDI), .rd(6), .rs1(0), .imm(256)),
+            asm_instr(.op(OP_BEQ), .rs1(7), .rs2(6), .imm(8)),
+            asm_instr(.op(OP_ADDI), .rd(3), .rs1(0), .imm(5)),
+            EBREAK_WORD
+        };
+        run_directed("min_beq_imm256", prog);
+
+        prog = '{
+            asm_instr(.op(OP_ADDI), .rd(6), .rs1(0), .imm(257)),
+            asm_instr(.op(OP_BEQ), .rs1(7), .rs2(6), .imm(8)),
+            asm_instr(.op(OP_ADDI), .rd(3), .rs1(0), .imm(5)),
+            EBREAK_WORD
+        };
+        run_directed("min_beq_imm257", prog);
+
+        prog = '{
+            asm_instr(.op(OP_ADDI), .rd(6), .rs1(0), .imm(255)),
+            asm_instr(.op(OP_BEQ), .rs1(7), .rs2(6), .imm(8)),
+            asm_instr(.op(OP_ADDI), .rd(3), .rs1(0), .imm(5)),
+            EBREAK_WORD
+        };
+        run_directed("min_beq_imm255", prog);
+
+        prog = '{
+            asm_instr(.op(OP_LW), .rd(6), .rs1(0), .imm(504)),
+            asm_instr(.op(OP_ADDI), .rd(9), .rs1(0), .imm(0)),
+            asm_instr(.op(OP_BEQ), .rs1(7), .rs2(6), .imm(8)),
+            asm_instr(.op(OP_ADDI), .rd(3), .rs1(0), .imm(5)),
+            EBREAK_WORD
+        };
+        run_directed("min_lw_gap_beq", prog);
+
+        prog = '{
+            asm_instr(.op(OP_ADDI), .rd(6), .rs1(0), .imm(5)),
+            asm_instr(.op(OP_LW), .rd(6), .rs1(0), .imm(504)),
+            asm_instr(.op(OP_BEQ), .rs1(7), .rs2(6), .imm(8)),
+            asm_instr(.op(OP_ADDI), .rd(3), .rs1(0), .imm(5)),
+            EBREAK_WORD
+        };
+        run_directed("min_lwuse_stale_ne", prog);
+
+        prog = '{
+            asm_instr(.op(OP_ADDI), .rd(6), .rs1(0), .imm(5)),
+            asm_instr(.op(OP_ADDI), .rd(7), .rs1(0), .imm(5)),
+            asm_instr(.op(OP_LW), .rd(6), .rs1(0), .imm(504)),
+            asm_instr(.op(OP_BEQ), .rs1(7), .rs2(6), .imm(8)),
+            asm_instr(.op(OP_ADDI), .rd(3), .rs1(0), .imm(5)),
+            EBREAK_WORD
+        };
+        run_directed("min_lwuse_stale_eq", prog);
+
+        prog = '{
+            asm_instr(.op(OP_ADDI), .rd(6), .rs1(0), .imm(5)),
+            asm_instr(.op(OP_LW), .rd(6), .rs1(0), .imm(504)),
+            asm_instr(.op(OP_ADD), .rd(4), .rs1(6), .rs2(0)),
+            EBREAK_WORD
+        };
+        run_directed("min_lwuse_add", prog);
+
+
 
 	   //feedback test: External memory boundaries( MAx 4KB SRAM word address)
 	   drv.xbar_write(32'h0000_0FFC, 32'hDEAD_BEEF);
@@ -468,6 +529,8 @@ module cpu_tb_top;
     end
 
     wire rst = cpu_if.reset;
+    logic rst_prev = 1'b0;
+    always @(posedge cpu_if.clk) rst_prev <= cpu_if.reset;
 
     // 3.1: No_Store_TO_DATA0 - The CPU never asserts a data-SRAM write to word address 0
     NO_STORE_TO_DATA0:
@@ -478,8 +541,14 @@ module cpu_tb_top;
    // 3.2: NO_MEM_ACCESS_WHEN_IDLE - The CPU does not drive a data-SRAM access while cpu_active is low
    NO_MEM_ACCESS_WHEN_IDLE:
      assert property (@(posedge cpu_if.clk) disable iff (rst)
-	 (!cpu_if.cpu_active && !cpu_if.r_en && !cpu_if.w_en) |-> (!cpu_if.dsram_en))
-     else $error("Assertion Violation: CPU drove a data-SRAM access while not active");
+         (!cpu_if.cpu_active && !cpu_if.r_en && !cpu_if.w_en) |-> (!cpu_if.dsram_en))
+     else assertion_fail("CPU drove a data-SRAM access while not active");
+
+   // 3.3: RESET_QUIESCES_CONTROL - After reset has been held two cycles, the CPU is inactive and not halted
+   RESET_QUIESCES_CONTROL:
+     assert property (@(posedge cpu_if.clk)
+         (cpu_if.reset && rst_prev) |-> (!cpu_if.cpu_active && !cpu_if.cpu_halted))
+     else assertion_fail("Control signals not idle while reset was asserted");
 
     // Example assertion
     // It checks one interface rule and sends failures through the testbench counter
