@@ -256,6 +256,7 @@ module cpu_tb_top;
         sb.set_test($sformatf("random_%0d", p));
 
         drv.reset_task();
+        init_memories();
         seqr.gen_program(len);
         seqr.wait_for_empty();
         repeat (2) @(cpu_if.cb);

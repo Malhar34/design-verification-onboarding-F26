@@ -145,17 +145,17 @@ class cpu_sb #(int DataSize=32, int AddrSize=14);
 
                 // Run the reference model when CPU execution begins
                 CPU_START: begin
-			ref_model.load_imem(expected_imem);
-			ref_model.load_dmem(expected_dmem);
+			        ref_model.load_imem(expected_imem);
+			        ref_model.load_dmem(expected_dmem);
 
-			ref_model.clear_state();
-			ref_model.run(MAX_REF_INSTR);
+			        ref_model.clear_state();
+			        ref_model.run(MAX_REF_INSTR);
 
-			expected_regs = ref_model.regs;
-			expected_stores = ref_model.store_queue;
+			        expected_regs = ref_model.regs;
+			        expected_stores = ref_model.store_queue;
 
-			observed_stores = 0;
-			program_running = 1'b1;
+			        observed_stores = 0;
+			        program_running = 1'b1;
 
                 end
 
@@ -163,15 +163,15 @@ class cpu_sb #(int DataSize=32, int AddrSize=14);
                 CPU_STORE: begin
                     ref_store_t exp_store;
 	            if (expected_stores.size() == 0) begin
-			fail($sformatf("Unexpected CPU store to addr 0x%0x with data 0x%0x", trans.addr, trans.data));
-		    end else begin
-			exp_store = expected_stores.pop_front();
-			if(trans.addr != exp_store.addr || trans.data != exp_store.data) begin
-				fail($sformatf("Store mismatch: expected [0x%0x] <- 0x%0x, got [0x%0x] <- 0x%0x", 
-                                           exp_store.addr, exp_store.data, trans.addr, trans.data));	
-			end
-			observed_stores++;
-		    end
+			        fail($sformatf("Unexpected CPU store to addr 0x%0x with data 0x%0x", trans.addr, trans.data));
+		        end else begin
+			        exp_store = expected_stores.pop_front();
+			        if(trans.addr != exp_store.addr || trans.data != exp_store.data) begin
+				        fail($sformatf("Store mismatch: expected [0x%0x] <- 0x%0x, got [0x%0x] <- 0x%0x", exp_store.addr, exp_store.data, trans.addr, trans.data));	
+			        end
+			        observed_stores++;
+		        end
+                expected_dmem[trans.addr] = trans.data;
                 end
 
                 // Each CPU load must return the current expected memory value
