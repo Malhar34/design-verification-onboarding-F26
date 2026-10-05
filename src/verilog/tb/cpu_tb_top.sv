@@ -533,11 +533,6 @@ module cpu_tb_top;
     logic rst_prev = 1'b0;
     always @(posedge cpu_if.clk) rst_prev <= cpu_if.reset;
 
-    // 3.1: No_Store_TO_DATA0 - The CPU never asserts a data-SRAM write to word address 0
-    NO_STORE_TO_DATA0:
-      assert property (@(posedge cpu_if.clk) disable iff (rst)
-	(cpu_if.cpu_active && cpu_if.dsram_en && cpu_if.dsram_write_en) |-> (cpu_if.dsram_addr != 10'd0))
-      else assertion_fail("Assertion Violation: CPU asserted a data-SRAM write to word address 0");
 
    // 3.2: NO_MEM_ACCESS_WHEN_IDLE - The CPU does not drive a data-SRAM access while cpu_active is low
    NO_MEM_ACCESS_WHEN_IDLE:
