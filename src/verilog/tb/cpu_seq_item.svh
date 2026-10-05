@@ -34,7 +34,7 @@ class cpu_seq_item #(int DataSize=32, int AddrSize=14);
     constraint c_imm_range {
         imm >= -2048;
 	    imm <= 2047;
-	    imm dist {
+	    (op == OP_ADDI) -> imm dist {
 	        -2048 :/ 1,
 	        -1 :/ 1,
 	        0 :/ 2,
