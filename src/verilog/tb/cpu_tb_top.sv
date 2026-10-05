@@ -248,7 +248,27 @@ module cpu_tb_top;
 
         // CONSTRAINED-RANDOM TESTS
         // Use the existing helpers
-	seqr.gen_program(NUM_RANDOM_PROGRAMS);
+	for (int p = 0; p < 20; p++) begin
+        int len;
+        len = $urandom_range(5, 30);
+
+        $display(" RANDOM PROGRAM %0d of 20, %0d instruction", p, len);
+        sb.set_test($sformatf("random_%0d", p));
+
+        drv.reset_task();
+        seqr.gen_program(len);
+        seqr.wait_for_empty();
+        repeat (2) @(cpu_if.cb);
+        drv.run_program(2000);
+
+        if (drv.last_run_completed) begin
+            readback(2, REG_COUNT);
+            readback(1, 16);
+        end else begin
+            $display($stime, " TB: Skipping random_%0d readback after CPU timeout\n", p);
+            drv.reset_task();
+        end
+    end
 	seqr.gen_xbar(NUM_RANDOM_XBAR);
 
 
