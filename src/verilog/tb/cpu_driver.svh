@@ -76,64 +76,68 @@ class cpu_driver #(int DataSize=32, int AddrSize=14);
             $error($stime, " Drv: external read address 0x%0x is not word aligned\n", addr);
         end
 
-	cpuVif.cb.addr <= addr;
-	cpuVif.cb.r_en <= 1'b1;
-	cpuVif.cb.w_en <= 1'b0;
+	    cpuVif.cb.addr <= addr;
+	    cpuVif.cb.r_en <= 1'b1;
+	    cpuVif.cb.w_en <= 1'b0;
 
         timed_out = 1'b0;
         count     = 0;
-	
-	forever begin
-		@(cpuVif.cb);
-		count++;
+    
+        if (window_of(addr) != WIN_REG) begin
+            @(cpuVif.cb); // SRAm answers on the following cycle so I can ignore any rready left over from the last read
+        end
+        
+	    forever begin
+		    @(cpuVif.cb);
+		    count++;
 		
-		if (cpuVif.cb.rready === 1'b1) begin
-			break;
-		end
+		    if (cpuVif.cb.rready === 1'b1) begin
+			    break;
+		    end
 
-		if (count > 100) begin
-			timed_out = 1'b1;
-			$error($stime, " Drv: external read timeout at 0x%0x\n", addr);
-			break;
-		end
-	end
+		    if (count > 100) begin
+			    timed_out = 1'b1;
+			    $error($stime, " Drv: external read timeout at 0x%0x\n", addr);
+			    break;
+		    end
+	    end
 	
-	cpuVif.cb.r_en <= 1'b0;	
+	    cpuVif.cb.r_en <= 1'b0;	
 
     endtask: xbar_read
 
     // Drive a start request for one CPU run
     task start_cpu();
-	cpuVif.cb.en_cpu <= 1'b1;
-	@(cpuVif.cb);
-	cpuVif.cb.en_cpu <= 1'b0;
+	    cpuVif.cb.en_cpu <= 1'b1;
+	    @(cpuVif.cb);
+	    cpuVif.cb.en_cpu <= 1'b0;
 
     endtask: start_cpu
 
     // Wait for the CPU to halt, or fail after the allowed number of cycles
     task wait_for_halt(output int cycles, input int max_cycles=0);
         int limit;
-	bit halted;
+	    bit halted;
 
         limit  = (max_cycles == 0) ? run_timeout : max_cycles;
         cycles = 0;
-	halted = 1'b0;
-	last_run_completed = 1'b0;
+	    halted = 1'b0;
+	    last_run_completed = 1'b0;
 
-	while (!halted && cycles < limit) begin
-		@(cpuVif.cb);
-		cycles++;
-		if (cpuVif.cb.cpu_halted) begin
-			halted = 1'b1;
-		end
-	end
+	    while (!halted && cycles < limit) begin
+		    @(cpuVif.cb);
+		    cycles++;
+		    if (cpuVif.cb.cpu_halted) begin
+			    halted = 1'b1;
+		    end
+	    end
 
-	if (halted) begin
-		last_run_completed = 1'b1;
-	end else begin
-		timeouts++;
-		$error($stime, " Drv: CPU did not halt within %0d cycles\n", limit);
-	end
+	    if (halted) begin
+		    last_run_completed = 1'b1;
+	    end else begin
+		    timeouts++;
+		    $error($stime, " Drv: CPU did not halt within %0d cycles\n", limit);
+	    end
 
     endtask: wait_for_halt
 
@@ -149,26 +153,26 @@ class cpu_driver #(int DataSize=32, int AddrSize=14);
     // Stop a program through an external halt and wait for memory ownership
     // to return to the external port
     task halt_cpu_now();
-	int count = 0;
+	    int count = 0;
 
-	// Pulse the halt signal for one cycle
-	cpuVif.cb.halt_cpu <= 1'b1;
-	@(cpuVif.cb);
-	cpuVif.cb.halt_cpu <= 1'b0;
+	    // Pulse the halt signal for one cycle
+	    cpuVif.cb.halt_cpu <= 1'b1;
+	    @(cpuVif.cb);
+	    cpuVif.cb.halt_cpu <= 1'b0;
 
-	forever begin
-		if (cpuVif.cb.cpu_active === 1'b0) begin
-			break;
-		end
+	    forever begin
+		    if (cpuVif.cb.cpu_active === 1'b0) begin
+			    break;
+		    end
 
-		if (count > 100) begin
-			$error($stime, " Drv: timeout waiting for CPU to halt\n");
-			break;
-		end
+		    if (count > 100) begin
+			    $error($stime, " Drv: timeout waiting for CPU to halt\n");
+			    break;
+		    end
 
-		@(cpuVif.cb);
-		count++;
-	end
+		    @(cpuVif.cb);
+		    count++;
+	    end
 
     endtask: halt_cpu_now
 

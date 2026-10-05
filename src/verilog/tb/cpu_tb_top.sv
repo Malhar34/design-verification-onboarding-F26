@@ -214,7 +214,157 @@ module cpu_tb_top;
 	       EBREAK_WORD
 	   };
 	   run_directed("raw_dependency_chain", prog);
-	
+
+       prog = '{
+            asm_instr(.op(OP_SW), .rs1(0), .rs2(0), .imm(4)), 
+            EBREAK_WORD
+       };
+       run_directed("min_one_store", prog);
+
+       prog = '{
+            asm_instr(.op(OP_SW), .rs1(0), .rs2(2), .imm(1060)),
+            asm_instr(.op(OP_SW), .rs1(0), .rs2(4), .imm(220)),
+            asm_instr(.op(OP_SW), .rs1(4), .rs2(3), .imm(1696)),
+            EBREAK_WORD
+       };
+       run_directed("min_three_stores", prog);
+
+       prog = '{
+            asm_instr(.op(OP_LW), .rd(3), .rs1(0), .imm(900)),
+            EBREAK_WORD
+       };
+       run_directed("min_lw_x3_900", prog);
+
+       prog = '{
+            asm_instr(.op(OP_LW), .rd(6), .rs1(0), .imm(900)),
+            EBREAK_WORD
+       };
+       run_directed("min_lw_x6_900", prog);
+
+       prog = '{
+            asm_instr(.op(OP_LW), .rd(3), .rs1(0), .imm(504)),
+            EBREAK_WORD
+       };
+       run_directed("min_lw_x3_504", prog);
+
+       prog = '{
+            asm_instr(.op(OP_LW), .rd(6), .rs1(3), .imm(504)),
+            asm_instr(.op(OP_LW), .rd(3), .rs1(7), .imm(900)),
+            EBREAK_WORD
+       };
+       run_directed("min_lw_pair", prog);
+       prog = '{
+            asm_instr(.op(OP_LW), .rd(6), .rs1(3), .imm(504)),
+            asm_instr(.op(OP_BEQ), .rd(7), .rs1(6), .imm(8)),
+            asm_instr(.op(OP_LW), .rd(3), .rs1(7), .imm(900)),
+            EBREAK_WORD
+       };
+       run_directed("min_lw_branch", prog);
+
+       prog = '{
+            asm_instr(.op(OP_ADDI), .rd(6), .rs1(0), .imm(1)),
+            asm_instr(.op(OP_BEQ), .rs1(7), .rs2(6), .imm(8)),
+            asm_instr(.op(OP_ADDI), .rd(3), .rs1(0), .imm(5)),
+            EBREAK_WORD
+       };
+       run_directed("min_beq_rs1zero", prog);
+
+       prog = '{
+            asm_instr(.op(OP_ADDI), .rd(6), .rs1(0), .imm(1)),
+            asm_instr(.op(OP_BEQ), .rs1(6), .rs2(7), .imm(8)),
+            asm_instr(.op(OP_ADDI), .rd(3), .rs1(0), .imm(5)),
+            EBREAK_WORD
+       };
+       run_directed("min_beq_rs2zero", prog);
+
+       prog = '{
+            asm_instr(.op(OP_ADDI), .rd(6), .rs1(0), .imm(1)),
+            asm_instr(.op(OP_ADDI), .rd(7), .rs1(0), .imm(2)),
+            asm_instr(.op(OP_BEQ), .rs1(7), .rs2(6), .imm(8)),
+            asm_instr(.op(OP_ADDI), .rd(3), .rs1(0), .imm(5)),
+            EBREAK_WORD
+       };
+       run_directed("min_beq_nonzero", prog);
+
+       prog = '{
+            asm_instr(.op(OP_LW), .rd(6), .rs1(0), .imm(504)),
+            asm_instr(.op(OP_BEQ), .rs1(7), .rs2(6), .imm(8)),
+            asm_instr(.op(OP_ADDI), .rd(3), .rs1(0), .imm(5)),
+            EBREAK_WORD
+       };
+       run_directed("min_lwuse_beq", prog);
+
+       prog = '{
+            asm_instr(.op(OP_ADDI), .rd(1), .rs1(0), .imm(1)),
+            asm_instr(.op(OP_ADDI), .rd(2), .rs1(0), .imm(31)),
+            asm_instr(.op(OP_SLL), .rd(6), .rs1(1), .rs2(2)),
+            asm_instr(.op(OP_BEQ), .rs1(7), .rs2(6), .imm(8)),
+            asm_instr(.op(OP_ADDI), .rd(3), .rs1(0), .imm(5)),
+            EBREAK_WORD
+       };
+       run_directed("min_beq_highbit", prog);
+
+       prog = '{
+            asm_instr(.op(OP_ADDI), .rd(1), .rs1(0), .imm(1)),
+            asm_instr(.op(OP_ADDI), .rd(2), .rs1(0), .imm(30)),
+            asm_instr(.op(OP_SLL), .rd(6), .rs1(1), .rs2(2)),
+            asm_instr(.op(OP_BEQ), .rs1(7), .rs2(6), .imm(8)),
+            asm_instr(.op(OP_ADDI), .rd(3), .rs1(0), .imm(5)),
+            EBREAK_WORD
+        };
+        run_directed("min_beq_bit30", prog);
+
+        prog = '{
+            asm_instr(.op(OP_ADDI), .rd(1), .rs1(0), .imm(1)),
+            asm_instr(.op(OP_ADDI), .rd(2), .rs1(0), .imm(16)),
+            asm_instr(.op(OP_SLL), .rd(6), .rs1(1), .rs2(2)),
+            asm_instr(.op(OP_BEQ), .rs1(7), .rs2(6), .imm(8)),
+            asm_instr(.op(OP_ADDI), .rd(3), .rs1(0), .imm(5)),
+            EBREAK_WORD
+        };
+        run_directed("min_beq_bit16", prog);
+
+        prog = '{
+            asm_instr(.op(OP_ADDI), .rd(1), .rs1(0), .imm(1)),
+            asm_instr(.op(OP_ADDI), .rd(2), .rs1(0), .imm(8)),
+            asm_instr(.op(OP_SLL), .rd(6), .rs1(1), .rs2(2)),
+            asm_instr(.op(OP_BEQ), .rs1(7), .rs2(6), .imm(8)),
+            asm_instr(.op(OP_ADDI), .rd(3), .rs1(0), .imm(5)),
+            EBREAK_WORD
+        };
+        run_directed("min_beq_bit8", prog);
+
+        prog = '{
+            asm_instr(.op(OP_ADDI), .rd(1), .rs1(0), .imm(1)),
+            asm_instr(.op(OP_ADDI), .rd(2), .rs1(0), .imm(7)),
+            asm_instr(.op(OP_SLL), .rd(6), .rs1(1), .rs2(2)),
+            asm_instr(.op(OP_BEQ), .rs1(7), .rs2(6), .imm(8)),
+            asm_instr(.op(OP_ADDI), .rd(3), .rs1(0), .imm(5)),
+            EBREAK_WORD
+        };
+        run_directed("min_beq_bit7", prog);
+
+        prog = '{
+            asm_instr(.op(OP_ADDI), .rd(1), .rs1(0), .imm(1)),
+            asm_instr(.op(OP_ADDI), .rd(2), .rs1(0), .imm(4)),
+            asm_instr(.op(OP_SLL), .rd(6), .rs1(1), .rs2(2)),
+            asm_instr(.op(OP_BEQ), .rs1(7), .rs2(6), .imm(8)),
+            asm_instr(.op(OP_ADDI), .rd(3), .rs1(0), .imm(5)),
+            EBREAK_WORD
+        };
+        run_directed("min_beq_bit4", prog);
+
+        prog = '{
+            asm_instr(.op(OP_ADDI), .rd(1), .rs1(0), .imm(1)),
+            asm_instr(.op(OP_ADDI), .rd(2), .rs1(0), .imm(2)),
+            asm_instr(.op(OP_SLL), .rd(6), .rs1(1), .rs2(2)),
+            asm_instr(.op(OP_BEQ), .rs1(7), .rs2(6), .imm(8)),
+            asm_instr(.op(OP_ADDI), .rd(3), .rs1(0), .imm(5)),
+            EBREAK_WORD
+        };
+        run_directed("min_beq_bit2", prog);
+
+
 	   //feedback test: External memory boundaries( MAx 4KB SRAM word address)
 	   drv.xbar_write(32'h0000_0FFC, 32'hDEAD_BEEF);
 	   drv.xbar_read(32'h0000_0FFC);
