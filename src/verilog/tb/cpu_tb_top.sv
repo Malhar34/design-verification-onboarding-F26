@@ -424,6 +424,7 @@ module cpu_tb_top;
         };
         run_directed("min_lwuse_add", prog);
 
+       
 
 
 	   //feedback test: External memory boundaries( MAx 4KB SRAM word address)
@@ -536,7 +537,7 @@ module cpu_tb_top;
     NO_STORE_TO_DATA0:
       assert property (@(posedge cpu_if.clk) disable iff (rst)
 	(cpu_if.cpu_active && cpu_if.dsram_en && cpu_if.dsram_write_en) |-> (cpu_if.dsram_addr != 10'd0))
-      else $error("Assertion Violation: CPU asserted a data-SRAM write to word address 0");
+      else assertion_fail("Assertion Violation: CPU asserted a data-SRAM write to word address 0");
 
    // 3.2: NO_MEM_ACCESS_WHEN_IDLE - The CPU does not drive a data-SRAM access while cpu_active is low
    NO_MEM_ACCESS_WHEN_IDLE:
@@ -549,6 +550,13 @@ module cpu_tb_top;
      assert property (@(posedge cpu_if.clk)
          (cpu_if.reset && rst_prev) |-> (!cpu_if.cpu_active && !cpu_if.cpu_halted))
      else assertion_fail("Control signals not idle while reset was asserted");
+    
+    // 3.1: HALT_RELEASES_CPU - An external halt request returns memory ownership to the external port within two cycles
+   HALT_RELEASES_CPU:
+     assert property (@(posedge cpu_if.clk) disable iff (rst)
+         (cpu_if.halt_cpu && cpu_if.cpu_active) |-> ##[1:2] !cpu_if.cpu_active)
+     else assertion_fail("cpu_active stayed high after an external halt request");
+
 
     // Example assertion
     // It checks one interface rule and sends failures through the testbench counter
