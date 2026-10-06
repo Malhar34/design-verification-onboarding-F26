@@ -1233,7 +1233,7 @@ through and x2 becomes 1.
 ```systemverilog
 prog = '{
   asm_instr(.op(OP_ADDI), .rd(1), .rs1(0), .imm(5)),
-  asm_instr(.op(OP_BEQ),  .rs1(0), .rs2(0), .imm(0)),   // loops forever
+  asm_instr(.op(OP_BEQ),  .rs1(0), .rs2(0), .imm(0)),   
   EBREAK_WORD
 };
 ```
@@ -1244,7 +1244,7 @@ prog = '{
 
 **Pass criteria:** 0 scoreboard mismatches and no `assertion_fail` message.
 
-**Final result:** Passed. The readback after the reset shows all zeros. The loop makes the reference model print "did not halt after 100000 instructions", which is expected and does not fail the run. Limit: the test does not check that x1 held 5 before the reset.
+**Final result:** Passed. The readback after the reset shows all zeros. The program runs a long countdown loop that the CPU is stopped in the middle of, so the reference model sees a program that ends. Limit: the test does not check that x1 held 5 before the reset.
 
 ---
 
@@ -1257,7 +1257,7 @@ prog = '{
 **Program:**
 ```systemverilog
 prog = '{
-  asm_instr(.op(OP_BEQ), .rs1(0), .rs2(0), .imm(0)),    // loops forever
+  asm_instr(.op(OP_BEQ), .rs1(0), .rs2(0), .imm(0)),    
   EBREAK_WORD
 };
 ```

@@ -655,7 +655,10 @@ module cpu_tb_top;
         // 1.29 external_halt_loop: a halt request stops a CPU that never halts on its own
         sb.set_test("external_halt_loop");
         prog = '{
-            asm_instr(.op(OP_BEQ), .rs1(0), .rs2(0), .imm(0)),
+            asm_instr(.op(OP_ADDI), .rd(1), .rs1(0), .imm(1000)),
+            asm_instr(.op(OP_ADDI), .rd(1), .rs1(1), .imm(-1)),
+            asm_instr(.op(OP_BEQ),  .rs1(1), .rs2(0), .imm(8)),
+            asm_instr(.op(OP_BEQ),  .rs1(0), .rs2(0), .imm(-8)),
             EBREAK_WORD
         };
         drv.reset_task();
@@ -671,8 +674,10 @@ module cpu_tb_top;
         // 1.28 reset_while_active: reset in the middle of a program clears the registers
         sb.set_test("reset_while_active");
         prog = '{
-            asm_instr(.op(OP_ADDI), .rd(1), .rs1(0), .imm(5)),
-            asm_instr(.op(OP_BEQ), .rs1(0), .rs2(0), .imm(0)),
+            asm_instr(.op(OP_ADDI), .rd(1), .rs1(0), .imm(1000)),
+            asm_instr(.op(OP_ADDI), .rd(1), .rs1(1), .imm(-1)),
+            asm_instr(.op(OP_BEQ),  .rs1(1), .rs2(0), .imm(8)),
+            asm_instr(.op(OP_BEQ),  .rs1(0), .rs2(0), .imm(-8)),
             EBREAK_WORD
         };
         drv.reset_task();
