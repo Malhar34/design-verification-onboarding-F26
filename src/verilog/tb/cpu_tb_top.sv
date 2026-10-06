@@ -426,26 +426,266 @@ module cpu_tb_top;
 
        
 
+        // 1.3 x0_write_protection
+        prog = '{
+            asm_instr(.op(OP_ADDI), .rd(1), .rs1(0), .imm(5)),
+            asm_instr(.op(OP_ADDI), .rd(0), .rs1(0), .imm(99)),
+            asm_instr(.op(OP_ADD),  .rd(0), .rs1(1), .rs2(1)),
+            asm_instr(.op(OP_ADD),  .rd(2), .rs1(0), .rs2(0)),
+            EBREAK_WORD
+        };
+        run_directed("x0_write_protection", prog);
 
-	   //feedback test: External memory boundaries( MAx 4KB SRAM word address)
-	   drv.xbar_write(32'h0000_0FFC, 32'hDEAD_BEEF);
-	   drv.xbar_read(32'h0000_0FFC);
+        // 1.4 x0_source_reads_zero
+        prog = '{
+            asm_instr(.op(OP_ADDI), .rd(1), .rs1(0), .imm(50)),
+            asm_instr(.op(OP_SUB),  .rd(2), .rs1(1), .rs2(0)),
+            asm_instr(.op(OP_SUB),  .rd(3), .rs1(0), .rs2(1)),
+            EBREAK_WORD
+        };
+        run_directed("x0_source_reads_zero", prog);
 
-	   // feedback Test: External halt request against an infitnite loop
-	   prog = '{
-	       asm_instr(.op(OP_BEQ), .rs1(0), .rs2(0), .imm(0)),
-	       EBREAK_WORD
-	   };
-	   drv.start_cpu(); // start waiting for halt
-	   #50; // goes through the loop for a little bit
-	   drv.halt_cpu_now(); //Interupt the infiti nite loop externally
+        // 1.5 add_value_classes
+        prog = '{
+            asm_instr(.op(OP_ADDI), .rd(1), .rs1(0), .imm(1)),
+            asm_instr(.op(OP_ADDI), .rd(2), .rs1(0), .imm(31)),
+            asm_instr(.op(OP_SLL),  .rd(3), .rs1(1), .rs2(2)),
+            asm_instr(.op(OP_ADD),  .rd(4), .rs1(3), .rs2(3)),
+            asm_instr(.op(OP_ADDI), .rd(5), .rs1(0), .imm(100)),
+            asm_instr(.op(OP_ADDI), .rd(6), .rs1(0), .imm(-40)),
+            asm_instr(.op(OP_ADD),  .rd(7), .rs1(5), .rs2(6)),
+            EBREAK_WORD
+        };
+        run_directed("add_value_classes", prog);
 
-	   // Feedback Tets: Reset during CPU active
-	   drv. start_cpu();
-	   #30;
-	   cpu_if.reset = 1'b1;
-	   #20;
-	   cpu_if.reset = 1'b0;
+        // 1.6 sub_value_classes
+        prog = '{
+            asm_instr(.op(OP_ADDI), .rd(1), .rs1(0), .imm(5)),
+            asm_instr(.op(OP_ADDI), .rd(2), .rs1(0), .imm(3)),
+            asm_instr(.op(OP_SUB),  .rd(3), .rs1(1), .rs2(2)),
+            asm_instr(.op(OP_SUB),  .rd(4), .rs1(2), .rs2(1)),
+            asm_instr(.op(OP_SUB),  .rd(5), .rs1(1), .rs2(1)),
+            EBREAK_WORD
+        };
+        run_directed("sub_value_classes", prog);
+
+        // 1.7 sll_shift_amount_masking
+        prog = '{
+            asm_instr(.op(OP_ADDI), .rd(1), .rs1(0), .imm(1)),
+            asm_instr(.op(OP_ADDI), .rd(2), .rs1(0), .imm(0)),
+            asm_instr(.op(OP_SLL),  .rd(3), .rs1(1), .rs2(2)),
+            asm_instr(.op(OP_ADDI), .rd(4), .rs1(0), .imm(31)),
+            asm_instr(.op(OP_SLL),  .rd(5), .rs1(1), .rs2(4)),
+            asm_instr(.op(OP_ADDI), .rd(6), .rs1(0), .imm(32)),
+            asm_instr(.op(OP_SLL),  .rd(7), .rs1(1), .rs2(6)),
+            asm_instr(.op(OP_ADDI), .rd(8), .rs1(0), .imm(33)),
+            asm_instr(.op(OP_SLL),  .rd(9), .rs1(1), .rs2(8)),
+            EBREAK_WORD
+        };
+        run_directed("sll_shift_amount_masking", prog);
+
+        // 1.8 srl_is_logical
+        prog = '{
+            asm_instr(.op(OP_ADDI), .rd(1), .rs1(0), .imm(1)),
+            asm_instr(.op(OP_ADDI), .rd(2), .rs1(0), .imm(31)),
+            asm_instr(.op(OP_SLL),  .rd(3), .rs1(1), .rs2(2)),
+            asm_instr(.op(OP_ADDI), .rd(4), .rs1(0), .imm(1)),
+            asm_instr(.op(OP_SRL),  .rd(5), .rs1(3), .rs2(4)),
+            asm_instr(.op(OP_SRL),  .rd(6), .rs1(3), .rs2(2)),
+            EBREAK_WORD
+        };
+        run_directed("srl_is_logical", prog);
+
+        // 1.9 shift_by_computed_amount
+        prog = '{
+            asm_instr(.op(OP_ADDI), .rd(1), .rs1(0), .imm(10)),
+            asm_instr(.op(OP_ADDI), .rd(2), .rs1(0), .imm(6)),
+            asm_instr(.op(OP_SUB),  .rd(3), .rs1(1), .rs2(2)),
+            asm_instr(.op(OP_ADDI), .rd(4), .rs1(0), .imm(3)),
+            asm_instr(.op(OP_SLL),  .rd(5), .rs1(4), .rs2(3)),
+            EBREAK_WORD
+        };
+        run_directed("shift_by_computed_amount", prog);
+
+        // 1.10 sw_lw_roundtrip_distinct_words
+        prog = '{
+            asm_instr(.op(OP_ADDI), .rd(1), .rs1(0), .imm(42)),
+            asm_instr(.op(OP_SW),   .rs1(0), .rs2(1), .imm(4)),
+            asm_instr(.op(OP_ADDI), .rd(2), .rs1(0), .imm(99)),
+            asm_instr(.op(OP_SW),   .rs1(0), .rs2(2), .imm(8)),
+            asm_instr(.op(OP_LW),   .rd(3), .rs1(0), .imm(8)),
+            asm_instr(.op(OP_LW),   .rd(4), .rs1(0), .imm(4)),
+            EBREAK_WORD
+        };
+        run_directed("sw_lw_roundtrip_distinct_words", prog);
+
+        // 1.11 mem_negative_offset
+        prog = '{
+            asm_instr(.op(OP_ADDI), .rd(1), .rs1(0), .imm(16)),
+            asm_instr(.op(OP_ADDI), .rd(2), .rs1(0), .imm(77)),
+            asm_instr(.op(OP_SW),   .rs1(1), .rs2(2), .imm(-8)),
+            asm_instr(.op(OP_LW),   .rd(3), .rs1(1), .imm(-8)),
+            asm_instr(.op(OP_LW),   .rd(4), .rs1(0), .imm(8)),
+            EBREAK_WORD
+        };
+        run_directed("mem_negative_offset", prog);
+
+        // 1.12 mem_byte_to_word_scaling (data memory holds random values after init_memories)
+        prog = '{
+            asm_instr(.op(OP_LW), .rd(1), .rs1(0), .imm(4)),
+            asm_instr(.op(OP_LW), .rd(2), .rs1(0), .imm(8)),
+            asm_instr(.op(OP_LW), .rd(3), .rs1(0), .imm(12)),
+            EBREAK_WORD
+        };
+        run_directed("mem_byte_to_word_scaling", prog);
+
+        // 1.14 sw_does_not_write_rd
+        prog = '{
+            asm_instr(.op(OP_ADDI), .rd(4), .rs1(0), .imm(123)),
+            asm_instr(.op(OP_ADDI), .rd(1), .rs1(0), .imm(55)),
+            asm_instr(.op(OP_SW),   .rs1(0), .rs2(1), .imm(4)),
+            EBREAK_WORD
+        };
+        run_directed("sw_does_not_write_rd", prog);
+
+        // 1.15 lw_into_x0
+        prog = '{
+            asm_instr(.op(OP_ADDI), .rd(1), .rs1(0), .imm(7)),
+            asm_instr(.op(OP_SW),   .rs1(0), .rs2(1), .imm(4)),
+            asm_instr(.op(OP_LW),   .rd(0), .rs1(0), .imm(4)),
+            asm_instr(.op(OP_ADD),  .rd(2), .rs1(0), .rs2(0)),
+            EBREAK_WORD
+        };
+        run_directed("lw_into_x0", prog);
+
+        // 1.16 beq_taken_forward
+        prog = '{
+            asm_instr(.op(OP_ADDI), .rd(1), .rs1(0), .imm(0)),
+            asm_instr(.op(OP_BEQ),  .rs1(1), .rs2(0), .imm(8)),
+            asm_instr(.op(OP_ADDI), .rd(2), .rs1(0), .imm(1)),
+            asm_instr(.op(OP_ADDI), .rd(3), .rs1(0), .imm(2)),
+            EBREAK_WORD
+        };
+        run_directed("beq_taken_forward", prog);
+
+        // 1.17 beq_not_taken
+        prog = '{
+            asm_instr(.op(OP_ADDI), .rd(1), .rs1(0), .imm(1)),
+            asm_instr(.op(OP_BEQ),  .rs1(1), .rs2(0), .imm(8)),
+            asm_instr(.op(OP_ADDI), .rd(2), .rs1(0), .imm(1)),
+            asm_instr(.op(OP_ADDI), .rd(3), .rs1(0), .imm(2)),
+            EBREAK_WORD
+        };
+        run_directed("beq_not_taken", prog);
+
+        // 1.18 beq_backward_loop
+        prog = '{
+            asm_instr(.op(OP_ADDI), .rd(1), .rs1(0), .imm(3)),
+            asm_instr(.op(OP_ADDI), .rd(2), .rs1(0), .imm(0)),
+            asm_instr(.op(OP_ADDI), .rd(2), .rs1(2), .imm(10)),
+            asm_instr(.op(OP_ADDI), .rd(1), .rs1(1), .imm(-1)),
+            asm_instr(.op(OP_BEQ),  .rs1(1), .rs2(0), .imm(8)),
+            asm_instr(.op(OP_BEQ),  .rs1(0), .rs2(0), .imm(-12)),
+            EBREAK_WORD
+        };
+        run_directed("beq_backward_loop", prog);
+
+        // 1.19 beq_equal_nonzero
+        prog = '{
+            asm_instr(.op(OP_ADDI), .rd(1), .rs1(0), .imm(5)),
+            asm_instr(.op(OP_ADDI), .rd(2), .rs1(0), .imm(5)),
+            asm_instr(.op(OP_BEQ),  .rs1(1), .rs2(2), .imm(8)),
+            asm_instr(.op(OP_ADDI), .rd(3), .rs1(0), .imm(1)),
+            asm_instr(.op(OP_ADDI), .rd(4), .rs1(0), .imm(2)),
+            EBREAK_WORD
+        };
+        run_directed("beq_equal_nonzero", prog);
+
+        // 1.21 no_execution_past_ebreak
+        prog = '{
+            asm_instr(.op(OP_ADDI), .rd(1), .rs1(0), .imm(1)),
+            EBREAK_WORD,
+            asm_instr(.op(OP_ADDI), .rd(2), .rs1(0), .imm(99)),
+            asm_instr(.op(OP_SW),   .rs1(0), .rs2(2), .imm(4)),
+            EBREAK_WORD
+        };
+        run_directed("no_execution_past_ebreak", prog);
+
+        // 1.22 unsupported_encoding_is_nop
+        prog = '{
+            asm_instr(.op(OP_ADDI), .rd(1), .rs1(0), .imm(5)),
+            asm_instr(.op(OP_NOP)),
+            asm_instr(.op(OP_ADDI), .rd(2), .rs1(0), .imm(7)),
+            EBREAK_WORD
+        };
+        run_directed("unsupported_encoding_is_nop", prog);
+
+        // 1.26 store_then_load_same_word
+        prog = '{
+            asm_instr(.op(OP_ADDI), .rd(1), .rs1(0), .imm(88)),
+            asm_instr(.op(OP_SW),   .rs1(0), .rs2(1), .imm(4)),
+            asm_instr(.op(OP_LW),   .rd(2), .rs1(0), .imm(4)),
+            EBREAK_WORD
+        };
+           run_directed("store_then_load_same_word", prog);
+
+        // 1.27 branch_on_just_written_reg
+        prog = '{
+            asm_instr(.op(OP_ADDI), .rd(1), .rs1(0), .imm(5)),
+            asm_instr(.op(OP_ADDI), .rd(1), .rs1(0), .imm(0)),
+            asm_instr(.op(OP_BEQ),  .rs1(1), .rs2(0), .imm(8)),
+            asm_instr(.op(OP_ADDI), .rd(2), .rs1(0), .imm(1)),
+            asm_instr(.op(OP_ADDI), .rd(3), .rs1(0), .imm(2)),
+            EBREAK_WORD
+        };
+        run_directed("branch_on_just_written_reg", prog);
+
+
+	    // 1.30 ext_mem_boundaries: first and last word of both SRAMs
+        sb.set_test("ext_mem_boundaries");
+        drv.xbar_write(32'h0000_0000, 32'h1111_0000);
+        drv.xbar_write(32'h0000_0FFC, 32'h2222_0FFC);
+        drv.xbar_write(32'h0000_1000, 32'h3333_1000);
+        drv.xbar_write(32'h0000_1FFC, 32'h4444_1FFC);
+        drv.xbar_read(32'h0000_0000);
+        drv.xbar_read(32'h0000_0FFC);
+        drv.xbar_read(32'h0000_1000);
+        drv.xbar_read(32'h0000_1FFC);
+
+        // 1.29 external_halt_loop: a halt request stops a CPU that never halts on its own
+        sb.set_test("external_halt_loop");
+        prog = '{
+            asm_instr(.op(OP_BEQ), .rs1(0), .rs2(0), .imm(0)),
+            EBREAK_WORD
+        };
+        drv.reset_task();
+        seqr.load_program(prog);
+        seqr.wait_for_empty();
+        repeat (2) @(cpu_if.cb);
+        drv.start_cpu();
+        repeat (10) @(cpu_if.cb);
+        if (cpu_if.cb.cpu_active !== 1'b1) assertion_fail("external_halt_loop: CPU was not running before the halt request");
+        drv.halt_cpu_now();
+        if (cpu_if.cb.cpu_active !== 1'b0) assertion_fail("external_halt_loop: cpu_active still high after the halt request");
+
+        // 1.28 reset_while_active: reset in the middle of a program clears the registers
+        sb.set_test("reset_while_active");
+        prog = '{
+            asm_instr(.op(OP_ADDI), .rd(1), .rs1(0), .imm(5)),
+            asm_instr(.op(OP_BEQ), .rs1(0), .rs2(0), .imm(0)),
+            EBREAK_WORD
+        };
+        drv.reset_task();
+        seqr.load_program(prog);
+        seqr.wait_for_empty();
+        repeat (2) @(cpu_if.cb);
+        drv.start_cpu();
+        repeat (15) @(cpu_if.cb);
+        if (cpu_if.cb.cpu_active !== 1'b1) assertion_fail("reset_while_active: CPU was not running before reset");
+        drv.reset_task();
+        if (cpu_if.cb.cpu_active !== 1'b0) assertion_fail("reset_while_active: cpu_active still high after reset");
+        readback(2, REG_COUNT);
+
         
            // Example Test: addi with a positive immediate
             prog = '{
