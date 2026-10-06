@@ -22,85 +22,64 @@ instructions and disappear from rendered Markdown.
 | Revision | Date | Changes |
 | --- | --- | --- |
 | Initial | 2026-09-26 | Initial planned tests |
-| Final | 2026-10-05 | Implemented driver, monitor, scoreboard, constraints, directed tests and assertions. Changes found during implementation are listed in the rows below. |
-| Final | 2026-10-05 | Monitor `observe_external_read` checked `rready` in the request cycle, so a stale `rready` from the previous read was taken as the response. Symptom: `dmem[0x001]` returned the value of `dmem[0x000]`. Fixed by recording the request and matching the response on a later cycle. |
-| Final | 2026-10-05 | Monitor `observe_cpu_memory` never emitted CPU loads and stores, because `run()` stopped calling it once `dsram_en` dropped. Fixed by holding pending operations in the member fields and emitting them on the next call. |
-| Final | 2026-10-05 | Scoreboard `CPU_STORE` did not update `expected_dmem`, so readback after a store compared against stale data (random_5, seed 642649788, word 9). Fixed. |
-| Final | 2026-10-05 | Driver `xbar_read` accepted a stale `rready` as the response to a new SRAM read. Waveform: the read lasted one clock and returned the data of the preceding write (random_19, `imem[0x266]`). Fixed by waiting one cycle for SRAM windows. |
-| Final | 2026-10-05 | The random test only queued instruction writes and never ran the CPU, so the encrypted CPU passed. Replaced with a loop of 20 programs with reset, `init_memories()`, a bounded run and readback each iteration. |
-| Final | 2026-10-05 | `c_imm_range` corner weights applied to every instruction, so random programs were about 75% `addi` with almost no branches. Weights now apply only to `addi`. |
-| Final | 2026-10-05 | `c_mem_align` bounds only the immediate. The state-aware version using `reg_snapshot` was not implemented because the updated scaffold was never received (`git fetch` returned 403). Effective addresses depend on register values and are not constrained. |
-| Final | 2026-10-05 | `NO_MEM_ACCESS_WHEN_IDLE` originally fired on every external data-memory access, because the memory controller raises `dsram_en` for the external port while `cpu_active` is low. Narrowed to exclude cycles with `r_en` or `w_en`. |
-| Final | 2026-10-05 | `NO_STORE_TO_DATA0` removed. The Digital Design rule that `data[0]` stays 0 does not hold in this testbench: `init_memories()` fills word 0 with a random value, and random program 13 legally stored to word 0 with 0 scoreboard mismatches (`evidence_NO_STORE_TO_DATA0.log`). Replaced by `HALT_RELEASES_CPU`. Entry 3.1 above is kept unchanged. |
-| Final | 2026-10-05 | Added the three reviewer-requested tests: 1.28 `reset_while_active`, 1.29 `external_halt_loop` and 1.30 `ext_mem_boundaries`. The original drafts loaded no program and checked nothing, so they were rewritten. The two looping programs make the reference model print "did not halt after 100000 instructions", which is expected and does not fail the run. Limit: 1.28 does not check that x1 held 5 before the reset. |
+| Final | 2026-10-05 | Implemented the driver, monitor, scoreboard, constraints, directed tests and assertions. Tests 1.3 to 1.27 were implemented as planned, except 1.13 (withdrawn), 1.20 and 1.23 (partly covered), and 1.24 and 1.25 (not implemented). |
+| Final | 2026-10-05 | Review feedback on the initial plan was added: tests 1.28, 1.29 and 1.30, and the assertion `RESET_QUIESCES_CONTROL`. See the next section. |
+| Final | 2026-10-05 | Monitor `observe_external_read` treated a leftover `rready` as the response to a new read, so `dmem[0x001]` returned the value of `dmem[0x000]`. Fixed by recording the request and checking `rready` on a later cycle. |
+| Final | 2026-10-05 | Monitor `observe_cpu_memory` did not report CPU loads and stores once `dsram_en` dropped. Fixed by keeping the pending operation and reporting it on the next cycle. |
+| Final | 2026-10-05 | Scoreboard `CPU_STORE` did not update `expected_dmem`, so a later readback compared against old data (random_5, seed 642649788, word 9). Fixed. |
+| Final | 2026-10-05 | Driver `xbar_read` took a leftover `rready` as the response to a new SRAM read (random_19: `imem[0x266]` returned the data of the write before it). Fixed by waiting one cycle for SRAM windows. |
+| Final | 2026-10-05 | The random test only wrote programs into memory and never ran the CPU, so the encrypted CPU passed. Replaced with a loop of 20 programs with reset, `init_memories()`, a timed run and readback. |
+| Final | 2026-10-05 | `c_imm_range` corner weights applied to every instruction, so random programs were mostly `addi` with almost no branches. The weights now apply only to `addi`. |
+| Final | 2026-10-05 | `c_mem_align` only limits the immediate. The version that uses register state was not implemented because I could not pull the updated scaffold (`git fetch` returned a 403 error). |
+| Final | 2026-10-05 | `NO_MEM_ACCESS_WHEN_IDLE` first fired on every external data-memory access, because the memory controller raises `dsram_en` for the external port while `cpu_active` is low. It now ignores cycles where `r_en` or `w_en` is high. |
+| Final | 2026-10-05 | `NO_STORE_TO_DATA0` was withdrawn. `init_memories()` fills data word 0 with a random value, and random program 13 stored to word 0 with 0 scoreboard mismatches (`evidence_NO_STORE_TO_DATA0.log`). `HALT_RELEASES_CPU` was added in its place. |
+
+---
+
+## Feedback from the review of the initial plan
+
+| Feedback | What I did | Where |
+| --- | --- | --- |
+| Add a test for reset during CPU active | Test 1.28 `reset_while_active` | Section 1 |
+| Add a test for external halt request | Test 1.29 `external_halt_loop` | Section 1 |
+| Add a test for external memory boundaries in SRAM | Test 1.30 `ext_mem_boundaries` | Section 1 |
+| Add an assertion for observing the control signals when reset is asserted | Assertion `RESET_QUIESCES_CONTROL` | Section 3 |
 
 ---
 
 ## Verification strategy
 
-The chip exposes three things an external observer can use: the crossbar port
-(instruction SRAM, data SRAM, and a read-only register window), the
-cpu_halted pulse, and the data-SRAM observation taps (dsram_en,
-dsram_write_en, dsram_addr, dsram_wdata, dsram_rdata). Everything below
-is written against those and not against CPU internals.
+The testbench only uses what can be seen at the chip boundary: the external memory port (instruction SRAM, data SRAM and the read-only register window), the `cpu_halted` pulse, `cpu_active`, and the data-SRAM signals (`dsram_en`, `dsram_write_en`, `dsram_addr`, `dsram_wdata`, `dsram_rdata`). Nothing in this plan refers to CPU internals.
 
-2 things here for my plan
+Two ideas shaped the plan.
 
-**Final architectural state is not good enough evidence.** Reading registers and
-data memory after halt tells you where the CPU ended up, not how it got there.
-The dSRAM taps let the monitor reconstruct every load and store as it happens,
-so tests that care about which memory operations occurred (address scaling,
-data[0] preservation, spurious writes) check the ordered stream rather than the end state.
+**Checking the final state is not enough.** Reading registers and memory after the halt shows where the CPU ended up, not how it got there. The monitor rebuilds every CPU load and store from the data-SRAM signals, so the scoreboard checks the order of stores as well as the final memory.
 
-**Tests are chosen by failure mode, not by opcode.** A checklist with one
-friendly case per instruction proves almost nothing: an implementation can pass
-`addi x1, x0, 5` while getting sign extension, shift masking, and address
-scaling all wrong. Each test below names the specific incorrect implementation
-it is designed to separate from the correct one. Where several instructions
-share a failed mode, one test covers them. Where one instruction has several
-distinct failed modes, it gets several tests.
-
-The groupings are:
+**Tests are chosen by failure mode, not by opcode.** One easy example per instruction would pass on a CPU with a wrong sign extension, shift mask or address scaling. Each test below says which wrong implementation it is meant to catch.
 
 | Group | Tests | Failure modes targeted |
 | --- | --- | --- |
-| Value classes and limits | 1.1, 1.5–1.9 | sign extension, wraparound, shift-amount masking, logical vs arithmetic shift |
-| Architectural invariants | 1.3, 1.4, 1.13, 1.15 | x0 semantics, `data[0]` preservation |
-| Adjacent-instruction dependencies | 1.2, 1.26, 1.27 | results not committed before the next instruction reads them |
-| Address translation | 1.10–1.12 | byte-vs-word scaling, negative offsets |
-| Field aliasing | 1.14 | S-type immediate bits misread as a destination register |
-| Control flow | 1.16–1.19 | branch direction, backward targets |
-| Termination | 1.20–1.22 | halt stickiness, halt pulse shape, unsupported encodings |
-| Ownership and port protocol | 1.23–1.25 | memory handoff, read-only window, unmapped window |
+| Value classes and limits | 1.1, 1.5 to 1.9 | sign extension, wraparound, shift-amount masking, logical vs arithmetic shift |
+| Register invariants | 1.3, 1.4, 1.15 | x0 always reads 0 and ignores writes |
+| Adjacent-instruction dependencies | 1.2, 1.26, 1.27 | a result is not ready for the next instruction |
+| Address translation | 1.10 to 1.12 | byte-to-word scaling, negative offsets |
+| Field aliasing | 1.14 | store immediate bits treated as a destination register |
+| Control flow | 1.16 to 1.19 | branch direction, backward targets, equality |
+| Termination | 1.20 to 1.22 | halt behavior, unsupported encodings |
+| Ownership and port protocol | 1.23 to 1.25 | memory handoff, read-only window, unmapped window |
+| Added after review | 1.28 to 1.30 | reset during a run, external halt, SRAM boundaries |
+| Withdrawn | 1.13 | `data[0]` is not required to stay 0 in this testbench |
 
 ---
 
-## Open questions I resolved before implementation
+## Open questions
 
-Recorded here deliberately. These affect how programs are written, and the
-revision history should show when they were answered.
-
-1. **Does `asm_instr`'s `imm` argument for `OP_BEQ` take a byte offset or a
-   word offset?** Resolved 2026-09-26. `encode()` in `cpu_seq_item.svh`
-   builds the B-type word as
-   `{b_imm[12], b_imm[10:5], rs2, rs1, 3'b000, b_imm[4:1], b_imm[11], 7'b1100011}`,
-   which is the standard RISC-V B-type layout with `imm[0]` implicit. The
-   argument is therefore a byte offset relative to the branch
-   instruction's own address. All branch programs in this plan are written on
-   that basis and need no adjustment.
-2. **What does `asm_instr(.op(OP_NOP))` encode to?** Resolved 2026-09-26.
-   `encode()` has `default: word = '0;`, so an `OP_NOP` item produces
-   `32'h0000_0000`. That word's opcode field is `7'b0000000`, which matches no
-   supported instruction, so a correct decoder must take its default path and
-   assert no write enables. Test 1.22 uses this word directly.
-3. **What is the DUT's defined behavior for an external access with
-   `addr[13:12] == 2'b11`?** `window_of()` returns `WIN_NONE`, but the README
-   does not say whether the port returns `rready` with undefined data or never
-   responds. Test 1.25 must be written against the actual contract.
-4. **Does an external write attempted while `cpu_active` is high get dropped,
-   queued, or corrupt memory?** The README says the port "is serviced only
-   while the CPU is disabled," which does not by itself say what happens to a
-   request made anyway. Test 1.23 covers this once it is is known.
+| # | Question | Answer |
+| --- | --- | --- |
+| 1 | Does `asm_instr` take a byte or word offset for `OP_BEQ`? | Resolved 2026-09-26. A byte offset. `encode()` in `cpu_seq_item.svh` uses the standard B-type layout. |
+| 2 | What does `OP_NOP` encode to? | Resolved 2026-09-26. `32'h0000_0000`, which matches no supported instruction. Test 1.22 uses it. |
+| 3 | What does the port do for an external access with `addr[13:12] == 2'b11`? | Not answered. The README does not say. Test 1.25 was not implemented. |
+| 4 | What happens to an external write made while `cpu_active` is high? | Not answered. The README only says the port is serviced while the CPU is disabled. Test 1.23 covers the normal flow only. |
 
 ---
 
@@ -110,37 +89,43 @@ revision history should show when they were answered.
 
 | Test ID | Test name | Functionality being tested | Expected result | Status |
 | --- | --- | --- | --- | --- |
-| 1.1 | `addi_imm_limits` | I-type immediate sign extension across its full range | Positive max, negative max, −1, and 0 all produce correct 32-bit values | Planned |
-| 1.2 | `raw_dependency_chain` | A register written by instruction N is visible to instruction N+1 | Each result reflects the immediately preceding write | Planned |
-| 1.3 | `x0_write_protection` | Writes targeting x0 are discarded | x0 reads 0 after both an `addi` and an `add` target it | Planned |
-| 1.4 | `x0_source_reads_zero` | x0 reads as zero regardless of attempted writes | Arithmetic using x0 as a source behaves as if it were 0 | Planned |
-| 1.5 | `add_value_classes` | Register-register add including 32-bit wraparound | Positive, mixed-sign, and overflow-wrap cases correct | Planned |
-| 1.6 | `sub_value_classes` | Subtraction producing positive, nagative, and zero results | Negative reuslt is correct two's complement. Self subtract is 0 | Planned |
-| 1.7 | `sll_shift_amount_masking` | Shift amount uses only the low 5 bits of rs2 | Shifts of 0, 31, 32, and 33 behave as 0, 31, 0, and 1 | Planned |
-| 1.8 | `srl_is_logical` | Right shift fills with zeros, not the sign bit | 0x80000000 >> 1 yields 0x40000000, not 0xC0000000 | Planned |
-| 1.9 | `shift_by_computed_amount` | Shift amount comes from a register, not an immediate | Shift by a runtime-computed value is correct | Planned |
-| 1.10 | `sw_lw_roundtrip_distinct_words` | Stores and loads reach distinct memory words | Two values stored at different addresses read back independently | Planned |
-| 1.11 | `mem_negative_offset` | Negative immediate offsets on loads and stores | A negative-offset access reaches the same word as the equivalent positive-offset access | Planned |
-| 1.12 | `mem_byte_to_word_scaling` | Byte addresses are converted to word indices | Byte addresses 4, 8, 12 read preloaded words 1, 2, 3 | Planned |
-| 1.13 | `data0_preservation` | `data[0]` is never written | `dmem[0]` is 0 after a program of stores elsewhere, and no observed store targets word 0 | Planned |
-| 1.14 | `sw_does_not_write_rd` | S-type immediate bits in the rd field do not cause a register write | The register aliased by `imm[4:0]` is unchanged | Planned |
-| 1.15 | `lw_into_x0` | A load targeting x0 is discarded | x0 reads 0 after `lw x0` of a nonzero value | Planned |
-| 1.16 | `beq_taken_forward` | A taken branch redirects the PC forward | The skipped instruction leaves no trace | Planned |
-| 1.17 | `beq_not_taken` | A not-taken branch falls through | The following instruction executes | Planned |
-| 1.18 | `beq_backward_loop` | Negative branch offsets and repeated execution | A three-iteration loop produces the correct accumulator | Planned |
-| 1.19 | `beq_equal_nonzero` | Equality between two nonzero registers | The branch is taken when rs1 == rs2 and neither is x0 | Planned |
-| 1.20 | `ebreak_halt_pulse` | `ebreak` halts and pulses `cpu_halted` exactly once | One halt observation; prior results intact | Planned |
-| 1.21 | `no_execution_past_ebreak` | Execution stops at `ebreak` | The instruction after `ebreak` leaves no trace | Planned |
-| 1.22 | `unsupported_encoding_is_nop` | An unsupported encoding behaves as a no-op | PC advances; surrounding instructions unaffected | Planned |
-| 1.23 | `ownership_handoff` | Memory ownership transfers at start and halt | External accesses succeed before start and after halt; `cpu_active` tracks the transition | Planned |
-| 1.24 | `reg_window_read_only` | The register window rejects writes | A program-set register value survives an attempted external write | Planned |
-| 1.25 | `unmapped_window` | Accesses to `addr[13:12] == 2'b11` | The port behaves the way detailed in its descriptoin without hanging the testbench | Planned |
-| 1.26 | `store_then_load_same_word` | A load immediately after a store to the same word | The load returns the just-stored value | Planned |
-| 1.27 | `branch_on_just_written_reg` | A branch whose condition regsiter was written by the previous instruction | The branch resolves on the new value | Planned |
+| 1.1 | `addi_imm_limits` | I-type immediate sign extension across its full range | Positive max, negative max, −1, and 0 all produce correct 32-bit values | Implemented (3 of 5 values), passed |
+| 1.2 | `raw_dependency_chain` | A register written by instruction N is visible to instruction N+1 | Each result reflects the immediately preceding write | Implemented, passed |
+| 1.3 | `x0_write_protection` | Writes targeting x0 are discarded | x0 reads 0 after both an `addi` and an `add` target it | Implemented, passed |
+| 1.4 | `x0_source_reads_zero` | x0 reads as zero regardless of attempted writes | Arithmetic using x0 as a source behaves as if it were 0 | Implemented, passed |
+| 1.5 | `add_value_classes` | Register-register add including 32-bit wraparound | Positive, mixed-sign, and overflow-wrap cases correct | Implemented, passed |
+| 1.6 | `sub_value_classes` | Subtraction producing positive, negative, and zero results | Negative result is correct two's complement. Self subtract is 0 | Implemented, passed |
+| 1.7 | `sll_shift_amount_masking` | Shift amount uses only the low 5 bits of rs2 | Shifts of 0, 31, 32, and 33 behave as 0, 31, 0, and 1 | Implemented, passed |
+| 1.8 | `srl_is_logical` | Right shift fills with zeros, not the sign bit | 0x80000000 >> 1 yields 0x40000000, not 0xC0000000 | Implemented, passed |
+| 1.9 | `shift_by_computed_amount` | Shift amount comes from a register, not an immediate | Shift by a runtime-computed value is correct | Implemented, passed |
+| 1.10 | `sw_lw_roundtrip_distinct_words` | Stores and loads reach distinct memory words | Two values stored at different addresses read back independently | Implemented, passed |
+| 1.11 | `mem_negative_offset` | Negative immediate offsets on loads and stores | A negative-offset access reaches the same word as the equivalent positive-offset access | Implemented, passed |
+| 1.12 | `mem_byte_to_word_scaling` | Byte addresses are converted to word indices | Byte addresses 4, 8, 12 read preloaded words 1, 2, 3 | Implemented, passed |
+| 1.13 | `data0_preservation` | `data[0]` is never written | `dmem[0]` is 0 after a program of stores elsewhere, and no observed store targets word 0 | Withdrawn |
+| 1.14 | `sw_does_not_write_rd` | S-type immediate bits in the rd field do not cause a register write | The register aliased by `imm[4:0]` is unchanged | Implemented, passed |
+| 1.15 | `lw_into_x0` | A load targeting x0 is discarded | x0 reads 0 after `lw x0` of a nonzero value | Implemented, passed |
+| 1.16 | `beq_taken_forward` | A taken branch redirects the PC forward | The skipped instruction leaves no trace | Implemented, passed |
+| 1.17 | `beq_not_taken` | A not-taken branch falls through | The following instruction executes | Implemented, passed |
+| 1.18 | `beq_backward_loop` | Negative branch offsets and repeated execution | A three-iteration loop produces the correct accumulator | Implemented, passed |
+| 1.19 | `beq_equal_nonzero` | Equality between two nonzero registers | The branch is taken when rs1 == rs2 and neither is x0 | Implemented, passed |
+| 1.20 | `ebreak_halt_pulse` | `ebreak` halts and pulses `cpu_halted` exactly once | One halt observation; prior results intact | Partly covered |
+| 1.21 | `no_execution_past_ebreak` | Execution stops at `ebreak` | The instruction after `ebreak` leaves no trace | Implemented, passed |
+| 1.22 | `unsupported_encoding_is_nop` | An unsupported encoding behaves as a no-op | PC advances; surrounding instructions unaffected | Implemented, passed |
+| 1.23 | `ownership_handoff` | Memory ownership transfers at start and halt | External accesses succeed before start and after halt; `cpu_active` tracks the transition | Partly covered |
+| 1.24 | `reg_window_read_only` | The register window rejects writes | A program-set register value survives an attempted external write | Not implemented |
+| 1.25 | `unmapped_window` | Accesses to `addr[13:12] == 2'b11` | The port behaves as its contract says, without hanging the testbench | Not implemented |
+| 1.26 | `store_then_load_same_word` | A load immediately after a store to the same word | The load returns the just-stored value | Implemented, passed |
+| 1.27 | `branch_on_just_written_reg` | A branch whose condition register was written by the previous instruction | The branch resolves on the new value | Implemented, passed |
+| 1.28 | `reset_while_active` | Reset in the middle of a program clears the registers (reviewer request) | Register readback after the reset is all zeros | Implemented, passed |
+| 1.29 | `external_halt_loop` | An external halt request stops a program that never halts by itself (reviewer request) | `cpu_active` is high before the request and low after it | Implemented, passed |
+| 1.30 | `ext_mem_boundaries` | First and last word of both SRAMs are written and read back (reviewer request) | All four reads match the scoreboard's copy | Implemented, passed |
 
 ---
 
 ## Functional-test details
+
+**Note on the initial state.** The initial state in each entry is the plan as written. In the implemented tests, `init_memories()` fills data memory with random values before every test, and the reference model supplies the expected values. Where an expected value depends on that memory (for example 1.12 and 1.21), the reference model gives the real expected value.
+
 
 ### 1.1 — `addi_imm_limits`
 
@@ -183,7 +168,7 @@ prog = '{
 **Pass criteria:** All five registers match after halt. x2 and x3 specifically
 distinguish sign extension from zero padding.
 
-**Final result:** _(I will fill out after simulation)_
+**Final result:** Passed on my CPU with 0 scoreboard mismatches. The test in the testbench has three of the five planned values (2047, -2048 and -1). The cases 0 and 1 are not in it. They add little, because only the negative values exercise sign extension.
 
 ---
 
@@ -222,7 +207,7 @@ prog = '{
 **Pass criteria:** All four correct. If the register file returns stale data,
 x2 is −3 and the rest of the chain is not right.
 
-**Final result:** _(I will fill out after simulation)_
+**Final result:** Passed. The program in the testbench has two instructions, not the four planned.
 
 ---
 
@@ -260,7 +245,7 @@ prog = '{
 even if the register window read of x0 is hardwired to zero while the
 underlying storage was corrupted.
 
-**Final result:** _(I will fill out after simulation)_
+**Final result:** Passed on my CPU with 0 scoreboard mismatches. Expected values come from the reference model.
 
 ---
 
@@ -295,7 +280,7 @@ prog = '{
 **Pass criteria:** Both subtractions correct. x3 also confirms a negative
 result from the ALU.
 
-**Final result:** _(I will fill out after the simulation)_
+**Final result:** Everything passed on my CPU with 0 scoreboard mismatches. Expected values come from the reference model.
 
 ---
 
@@ -335,7 +320,7 @@ prog = '{
 
 **Pass criteria:** x4 is 0, not a saturated or sign-flipped value.
 
-**Final result:** _(I will fill out after simulation)_
+**Final result:** Everything passed on my CPU with 0 scoreboard mismatches. Expected values come from the reference model.
 
 ---
 
@@ -373,7 +358,7 @@ prog = '{
 **Pass criteria:** All three correct. If x3 is 8, the decoder is treating `sub`
 as `add`.
 
-**Final result:** _(I will fill out after simulation)_
+**Final result:** Everything passed on my CPU with 0 scoreboard mismatches. Expected values come from the reference model.
 
 ---
 
@@ -417,7 +402,7 @@ prog = '{
 **Pass criteria:** x7 is 1 and x9 is 2. An unmasked implementation gives 0 for
 both.
 
-**Final result:** _(I will fill out after simulation)_
+**Final result:** Everything passed on my CPU with 0 scoreboard mismatches. Expected values come from the reference model.
 
 ---
 
@@ -455,7 +440,7 @@ prog = '{
 **Pass criteria:** x5 is `0x4000_0000`. Any value with the top bit set means
 the shift is arithmetic.
 
-**Final result:** _(I will fill out after simulation)_
+**Final result:** Everything passed on my CPU with 0 scoreboard mismatches. Expected values come from the reference model.
 
 ---
 
@@ -492,7 +477,7 @@ prog = '{
 
 **Pass criteria:** x5 is 48.
 
-**Final result:** _(I will fill out after simulation)_
+**Final result:** Everything passed on my CPU with 0 scoreboard mismatches. Expected values come from the reference model.
 
 ---
 
@@ -537,7 +522,7 @@ address fails.
 transactions, at word addresses 1 and 2, and exactly two `CPU_LOAD`
 transactions at the same addresses.
 
-**Final result:** _(to be filled after simulation)_
+**Final result:** Passed on my CPU with 0 scoreboard mismatches. Expected values come from the reference model.
 
 ---
 
@@ -577,7 +562,7 @@ prog = '{
 value. If sign extension fails on the store, the write lands near word 6
 (16 + 2040 in bytes) instead.
 
-**Final result:** _(I will fill out after simulation)_
+**Final result:** Everything passed on my CPU with 0 scoreboard mismatches. Expected values come from the reference model.
 
 ---
 
@@ -629,7 +614,7 @@ prog = '{
 addresses 1, 2, and 3 — checking the address stream directly rather than
 inferring it from the loaded data.
 
-**Final result:** _(I will fill out after simulation)_
+**Final result:** Passed. The plan preloaded distinct values. The test relies on the random values from init_memories(), and the scoreboard supplies the expected data.
 
 ---
 
@@ -677,7 +662,7 @@ The second criterion is the stronger one. The program deliberately mixes
 non-store instructions between the stores so that a write-enable asserted in
 the wrong state would show up as an extra `CPU_STORE`.
 
-**Final result:** _(I will fill out after simulation)_
+**Final result:** Withdrawn. The premise was wrong. init_memories() fills data word 0 with a random value, and random program 13 stored to word 0 with 0 scoreboard mismatches, so the reference model treats that store as legal. The scoreboard checks the store stream and final memory instead. Assertion NO_STORE_TO_DATA0 was withdrawn for the same reason (evidence_NO_STORE_TO_DATA0.log).
 
 ---
 
@@ -717,7 +702,7 @@ prog = '{
 **Pass criteria:** x4 still holds 123. If the store writes a register, x4 holds
 the computed store address (4) instead.
 
-**Final result:** _(I will fill out after simulation)_
+**Final result:** Everything passed on my CPU with 0 scoreboard mismatches. Expected values come from the reference model.
 
 ---
 
@@ -751,7 +736,7 @@ prog = '{
 
 **Pass criteria:** Both zero. If the load reached the register array, x2 is 14.
 
-**Final result:** _(I will fill out after simulation)_
+**Final result:** Everything passed on my CPU with 0 scoreboard mismatches. Expected values come from the reference model.
 
 ---
 
@@ -789,7 +774,7 @@ prog = '{
 **Note:** Branch offset is a byte offset from the branch instruction's own
 address, confirmed against `encode()` in `cpu_seq_item.svh`.
 
-**Final result:** _(I will fill out after simulation)_
+**Final result:** Everything passed on my CPU with 0 scoreboard mismatches. Expected values come from the reference model.
 
 ---
 
@@ -825,7 +810,7 @@ prog = '{
 
 **Pass criteria:** x2 is 1.
 
-**Final result:** _(I will fill out after simulation)_
+**Final result:** Everything passed on my CPU with 0 scoreboard mismatches. Expected values come from the reference model.
 
 ---
 
@@ -879,7 +864,7 @@ rather than discovered late.
 reach `ebreak`. The bounded halt timeout must record a failure and reset rather
 than hanging the suite.
 
-**Final result:** _(I will fill out after simulation)_
+**Final result:** Everything passed on my CPU with 0 scoreboard mismatches. Expected values come from the reference model.
 
 ---
 
@@ -922,7 +907,7 @@ intentionally supports only the x0 form, this test documents that limitation
 rather than reporting a defect; the distinction should be recorded in the final
 plan.
 
-**Final result:** _(I will fill out after simulation)_
+**Final result:** Everything passed on my CPU with 0 scoreboard mismatches. Expected values come from the reference model.
 
 ---
 
@@ -957,7 +942,7 @@ prog = '{
 **Pass criteria:** One halt observation, not zero and not many. x1 confirms the
 instruction before `ebreak` retired rather than being lost to an early halt.
 
-**Final result:** _(I will fill out after simulation)_
+**Final result:** Partly covered. Every test ends in ebreak and the driver waits for the halt pulse, so a missing pulse would time out. Not checked: that the pulse occurs exactly once.
 
 ---
 
@@ -994,7 +979,7 @@ prog = '{
 **Pass criteria:** x2 and `dmem[1]` are zero, and the monitor observes zero
 `CPU_STORE` transactions.
 
-**Final result:** _(I will fill out after simulation)_
+**Final result:** Everything passed on my CPU with 0 scoreboard mismatches. Expected values come from the reference model.
 
 ---
 
@@ -1036,7 +1021,7 @@ out, the unsupported encoding stalled the pipeline.
 `default` arm of `encode()`. Opcode field `7'b0000000` matches nothing in the
 supported set.
 
-**Final result:** _(I will fill out after simulation)_
+**Final result:** Everything passed on my CPU with 0 scoreboard mismatches. Expected values come from the reference model.
 
 ---
 
@@ -1090,7 +1075,7 @@ expected sequence, and the CPU observed the data written before it started.
 `cpu_active` is high depends on open question 4 and will be added once the
 contract is confirmed.
 
-**Final result:** _(I will fill out after simulation)_
+**Final result:** Partly covered. Every test writes the program before starting the CPU and reads state after the halt, so the handoff works in the normal flow. HALT_RELEASES_CPU checks cpu_active after an external halt. Not checked: an external access made while cpu_active is high (open question 4).
 
 ---
 
@@ -1128,7 +1113,7 @@ prog = '{
 **Pass criteria:** The readback is 64. If it is the sentinel, the window is
 writable and the read path is untrustworthy.
 
-**Final result:** _(I will fill out after simulation)_
+**Final result:** Not implemented. c_reg_read_only keeps random traffic from writing the register window, and no directed test attempts it.
 
 ---
 
@@ -1154,7 +1139,7 @@ will assert the documented contract, whichever it is.
 classifies it correctly. A hang is a testbench defect, not a DUT defect, and
 this test exists partly to prove the driver handles the case.
 
-**Final result:** _(I will fill out after simulation)_
+**Final result:** Not implemented. c_valid_window keeps random traffic out of the unmapped window, and no directed test attempts it. Open question 3 was never answered.
 
 ---
 
@@ -1193,7 +1178,7 @@ prog = '{
 
 **Pass criteria:** x2 is 88. If it is `0xDEAD_BEEF`, the load raced the store.
 
-**Final result:** _(I will fill out after simulation)_
+**Final result:** Everything passed on my CPU with 0 scoreboard mismatches. Expected values come from the reference model.
 
 ---
 
@@ -1234,7 +1219,78 @@ prog = '{
 **Pass criteria:** x2 is 0. If the branch read the stale value 5, it falls
 through and x2 becomes 1.
 
-**Final result:** _(I will fill out after simulation)_
+**Final result:** Everything passed on my CPU with 0 scoreboard mismatches. Expected values come from the reference model.
+
+---
+
+### 1.28 — `reset_while_active` (added after review)
+
+**Functionality:** A reset in the middle of a program clears the registers and stops the CPU.
+
+**Why this test:** Reset can arrive while the CPU is running. The registers must be cleared and the CPU must stop.
+
+**Program:**
+```systemverilog
+prog = '{
+  asm_instr(.op(OP_ADDI), .rd(1), .rs1(0), .imm(5)),
+  asm_instr(.op(OP_BEQ),  .rs1(0), .rs2(0), .imm(0)),   // loops forever
+  EBREAK_WORD
+};
+```
+
+**Steps:** reset, load the program, start the CPU, wait 15 clocks, check that `cpu_active` is high, reset again, check that `cpu_active` is low, then read all 32 registers.
+
+**Expected result:** all 32 registers read `32'h0000_0000`. The scoreboard clears its expected registers on reset.
+
+**Pass criteria:** 0 scoreboard mismatches and no `assertion_fail` message.
+
+**Final result:** Passed. The readback after the reset shows all zeros. The loop makes the reference model print "did not halt after 100000 instructions", which is expected and does not fail the run. Limit: the test does not check that x1 held 5 before the reset.
+
+---
+
+### 1.29 — `external_halt_loop` (added after review)
+
+**Functionality:** An external halt request stops a program that never halts by itself.
+
+**Why this test:** A program that does not reach `ebreak` can only be stopped from outside.
+
+**Program:**
+```systemverilog
+prog = '{
+  asm_instr(.op(OP_BEQ), .rs1(0), .rs2(0), .imm(0)),    // loops forever
+  EBREAK_WORD
+};
+```
+
+**Steps:** reset, load the program, start the CPU, wait 10 clocks, check that `cpu_active` is high, pulse `halt_cpu`, check that `cpu_active` is low.
+
+**Expected result:** `cpu_active` is high before the request and low after it.
+
+**Pass criteria:** no `assertion_fail` message. The driver's halt wait also stops after 100 cycles if `cpu_active` never drops.
+
+**Final result:** Passed. `HALT_RELEASES_CPU` watches the same behavior on every run. The test does not check `cpu_halted`.
+
+---
+
+### 1.30 — `ext_mem_boundaries` (added after review)
+
+**Functionality:** The first and last word of both SRAMs can be written and read through the external port.
+
+**Why this test:** The edges of each window are where an address decode error would show up, and a bad decode could make two windows overlap.
+
+**Steps:** write a different value to byte addresses `0x0000`, `0x0FFC`, `0x1000` and `0x1FFC`, then read all four back.
+
+**Expected result:** each read returns the value written to that address. The scoreboard compares every read with its own copy of memory.
+
+**Pass criteria:** 0 scoreboard mismatches.
+
+**Final result:** Passed. The log shows matching reads of `imem[0x000]`, `imem[0x3ff]`, `dmem[0x000]` and `dmem[0x3ff]`.
+
+---
+
+### Tests added during the bug hunt
+
+The 25 `min_*` tests in `cpu_tb_top.sv` were added to shrink the random failures into small reproducers. They were not in the initial plan. All of them pass on my CPU. The ones named in section 4 fail on the encrypted CPU, and the rest pass on both and were used to rule out other explanations.
 
 ---
 
@@ -1246,54 +1302,34 @@ through and x2 becomes 1.
 | --- | --- | --- | --- |
 | `c_opcode` | Provided | Restricts `op` to the supported instruction set so generated programs contain only encodings the DUT and reference model both define. Without it, most random programs would be unsupported encodings and would exercise almost nothing. | No member change |
 | `c_reg_bias` | Provided | Weights the register selection so a small set of registers is reused often. Uniform selection across 32 registers makes read-after-write dependencies rare; biasing creates them, which is where timing bugs appear. | No member change |
-| `c_imm_range` | Partial | Supplied code constrains only `imm >= -2048`, leaving the upper end unbounded, so generated immediates can exceed what a 12-bit signed field can hold and `encode()` would silently truncate them. Completion must add `imm <= 2047`. Planned completion also biases toward the endpoints and zero so the sign-extension boundary in 1.1 is hit regularly by random stimulus rather than only by the directed test. | Hard bounds -2048 to 2047 for every instruction. The corner weights (-2048, -1, 0, 1, 2047) now apply only to addi. When they applied to every instruction, the programs I looked at were mostly addi and branches almost never appeared. After the change, one 21-line program (20 random plus ebreak) contained 7 add, 1 addi, 2 beq, 3 lw, 1 sll, 3 srl and 3 sub. Corner immediates are no longer weighted for other ops, whose immediates come from their own constraints. |
-| `c_mem_align` | Open | Must force load and store effective addresses to be word-aligned and within the 1024-word data SRAM. Requires constraining the base register value together with the offset, since the effective address is their sum. Planned approach: bias the base toward x0 and bound the offset to a multiple of 4 inside the memory range. | Bounds only the immediate: a non-negative multiple of 4 below 4096, for lw and sw. The effective address is rs1 plus the immediate, and this constraint does not look at rs1, so the address can still fall outside data memory (my CPU wraps it with alu_result[11:2]). The README asks for a state-aware version using reg_snapshot with rs1 left random. I did not implement it because the updated scaffold never arrived (git fetch returned 403). The x0-base approach in the planned column was not used because the README rules it out. Negative offsets are unreachable in random stimulus and are covered only by directed tests.|
+| `c_imm_range` | Partial | Supplied code constrains only `imm >= -2048`, leaving the upper end unbounded, so generated immediates can exceed what a 12-bit signed field can hold and `encode()` would silently truncate them. Completion must add `imm <= 2047`. Planned completion also biases toward the endpoints and zero so the sign-extension boundary in 1.1 is hit regularly by random stimulus rather than only by the directed test. | Removes: immediates outside -2048 to 2047, which `encode()` would cut off. Encourages: the corner values -2048, -1, 0, 1 and 2047 for `addi` only. Unreachable: nothing for `addi`. Other instructions get their immediates from their own constraints. |
+| `c_mem_align` | Open | Must force load and store effective addresses to be word-aligned and within the 1024-word data SRAM. Requires constraining the base register value together with the offset, since the effective address is their sum. Planned approach: bias the base toward x0 and bound the offset to a multiple of 4 inside the memory range. | Removes: negative and unaligned immediates for `lw` and `sw`. Encourages: every word-aligned offset from 0 to 4092. Unreachable: negative offsets, which only directed test 1.11 covers. Limit: it does not use the base register, so the final address can still fall outside data memory. The README asks for a version that uses `reg_snapshot`. I did not implement it because I could not pull the updated scaffold (`git fetch` returned a 403 error). |
 | `c_imm_unused` | Provided | Forces the immediate field to a fixed value for instruction types that do not use it, so R-type programs are reproducible and the unused field cannot accidentally alias into a decoder path. | No member change |
-| `c_branch_target` | Partial | Supplied code constrains `(imm % 4 == 0) && (imm >= 4)`, which forces every generated branch forward and word-aligned. The forward restriction is what the TODO means by "avoid loops," but it also means random stimulus can never exercise a negative branch offset — that path is covered only by directed test 1.18. What is still missing is an upper bound tying the offset to the remaining program length, so a forward target cannot land past the final `ebreak`. Planned completion bounds `imm` by `(prog_len - idx) * 4`. |Immediate is a multiple of 4, at least 4, and at most (prog_len - idx) * 4. Branches only go forward, so negative offsets and loops are unreachable in random stimulus and only directed test 1.18 covers them. |
+| `c_branch_target` | Partial | Supplied code constrains `(imm % 4 == 0) && (imm >= 4)`, which forces every generated branch forward and word-aligned. The forward restriction is what the TODO means by "avoid loops," but it also means random stimulus can never exercise a negative branch offset — that path is covered only by directed test 1.18. What is still missing is an upper bound tying the offset to the remaining program length, so a forward target cannot land past the final `ebreak`. Planned completion bounds `imm` by `(prog_len - idx) * 4`. | Removes: unaligned, zero and backward offsets, and offsets beyond the program length. Encourages: forward branches of 4 to `(prog_len - idx) * 4` bytes. Unreachable: backward branches and loops, which only directed test 1.18 covers. |
 | `c_no_branch_at_end` | Provided | Prevents a branch in the final positions, where a forward target would fall outside the program. Keeps every generated program terminating at its `ebreak`. | No member change |
-| `c_branch_taken_bias` | Open | Must make taken branches occur at a useful rate. Unconstrained random register values are almost never equal, so nearly every branch falls through and the taken path goes untested. Planned approach: force one branch operand to x0 with some probability and bias the other toward zero, so the taken path is exercised without eliminating the not-taken path. | For beq, rs2 is drawn equal to rs1 with weight 1 against weight 1 for the whole register range 0 to 31. Roughly half of generated branches compare a register with itself and are always taken (slightly more than half, because the range includes rs1). The x0-based approach in the planned column was not used. Equal values in two different registers are not specifically targeted. |
+| `c_branch_taken_bias` | Open | Must make taken branches occur at a useful rate. Unconstrained random register values are almost never equal, so nearly every branch falls through and the taken path goes untested. Planned approach: force one branch operand to x0 with some probability and bias the other toward zero, so the taken path is exercised without eliminating the not-taken path. | Removes: nothing. Encourages: taken branches. `rs2` equals `rs1` with weight 1, against weight 1 for any register from 0 to 31, so about half of the branches compare a register with itself. Unreachable: nothing. Not-taken branches still happen. |
 
 ## External-port constraints
 
 | Constraint | Provided, partial, or open | Behavior and purpose | Final implementation summary |
 | --- | --- | --- | --- |
 | `c_align` | Provided | Forces external addresses to be word-aligned, matching the port requirement that accesses are word-aligned. | No member change |
-| `c_valid_window` | Partial | Must restrict `addr[13:12]` to mapped windows for ordinary traffic. Planned completion excludes `2'b11` from the default distribution while leaving a directed path for the unmapped-window test in 1.25. | Window is imem, dmem or the register file, and in the register window the word index is below 32. The unmapped window (2'b11) is excluded from random traffic. |
+| `c_valid_window` | Partial | Must restrict `addr[13:12]` to mapped windows for ordinary traffic. Planned completion excludes `2'b11` from the default distribution while leaving a directed path for the unmapped-window test in 1.25. | Removes: the unmapped window and register word indexes of 32 or more. Encourages: both SRAM windows and the register window. Unreachable: the unmapped window in random traffic. Directed test 1.25 was not implemented. |
 | `c_reg_read_only` | Provided | Prevents generating writes to the register window, which is read-only. Without it, random traffic would attempt illegal writes and the scoreboard would need to special-case them. | No member change |
-| `c_data_corners` | Open | Must bias external write data toward corner values rather than uniformly random 32-bit numbers. Planned set: 0, 1, `0xFFFF_FFFF`, `0x8000_0000`, `0x7FFF_FFFF`, and values with a single bit set. These are the values most likely to expose sign, carry, and truncation bugs when later loaded and operated on. | Dist: 0, 1, 0xFFFFFFFF, 0x80000000, 0x7FFFFFFF at weight 1 each, plus two broad ranges at weight 2 each. |
+| `c_data_corners` | Open | Must bias external write data toward corner values rather than uniformly random 32-bit numbers. Planned set: 0, 1, `0xFFFF_FFFF`, `0x8000_0000`, `0x7FFF_FFFF`, and values with a single bit set. These are the values most likely to expose sign, carry, and truncation bugs when later loaded and operated on. | Removes: nothing. Encourages: the values 0, 1, `0xFFFFFFFF`, `0x80000000` and `0x7FFFFFFF` (weight 1 each, about 55% of the weight in total with the two ranges below), plus two broad ranges, `0x00000002` to `0x7FFFFFFE` and `0x80000001` to `0xFFFFFFFE` (weight 2 each). Unreachable: nothing. Single-bit values from the planned column are not included. |
 
 ## Random-program test
 
-| Item | Plan |
+| Item | Final |
 | --- | --- |
-| Number of programs per seed | 20 initially; raised if coverage closure requires it |
-| Program-length range | 5 to 30 instructions plus a terminating `ebreak` |
-| Information logged for reproduction | Numeric SVSEED, iteration index, and the complete generated program |
+| Programs per run | 20 |
+| Program length | 5 to 30 random instructions, chosen with `$urandom_range(5, 30)`, plus a final `ebreak` |
+| Checked after each program | all 32 registers and data words 0 to 15 are read back and compared with the reference model. The scoreboard also compares the order of CPU stores. |
+| Logged for reproduction | the numeric SVSEED printed by Xcelium, a `RANDOM PROGRAM n of 20` line, and the full generated program |
 
-**Implementation outline:**
+Each iteration runs the same steps: reset, `init_memories()`, generate and load the program, start the CPU, wait for the halt with a 2000-cycle limit, then read back. If the CPU times out, the readback is skipped and the testbench resets.
 
-```systemverilog
-// For each iteration:
-//   1. Reset the chip and return all testbench signals to idle.
-//   2. seqr.gen_program(...) to produce a randomized instruction sequence
-//      terminated by EBREAK_WORD.
-//   3. Print the iteration index and the full program before running, so a
-//      failure is reproducible from the log alone.
-//   4. Load the program and any randomized initial data memory through the
-//      external port.
-//   5. Load the same program and data into the reference model.
-//   6. Pulse en_cpu and wait for the halt pulse with a bounded timeout.
-//      On timeout: record a failure, reset, and skip readback so a hung
-//      program does not generate misleading secondary mismatches.
-//   7. Read the register window and data SRAM and compare against the
-//      reference model prediction.
-//   8. Compare the monitor's observed CPU_STORE stream against the reference
-//      model's ordered store list.
-```
-
-Step 8 matters: comparing only final memory state would miss a store that wrote
-the right value to the right place at the wrong time, or an extra store that was
-later overwritten.
+Limits: the readback covers only the first 16 data words, so a store to any other word is checked only through the ordered store stream. After the 20 programs, the supplied `gen_xbar` call sends random external-port traffic.
 
 ---
 
@@ -1301,129 +1337,266 @@ later overwritten.
 
 ## Assertion summary
 
-| Assertion ID/name | Behavior checked | When it is sampled/disabled | Activating test |
+| Assertion | Behavior checked | Sampled / disabled | Status |
 | --- | --- | --- | --- |
-| 3.1 / `NO_STORE_TO_DATA0` | The CPU never asserts a data-SRAM write to word address 0 | Every posedge clk, disabled during reset | 1.13, and every random program containing a store |
-| 3.2 / `NO_MEM_ACCESS_WHEN_IDLE` | The CPU does not drive a data-SRAM access while `cpu_active` is low | Every posedge clk, disabled during reset | 1.23, and the boundary of every test |
+| `NO_SIMULTANEOUS_READ_WRITE` | `w_en` and `r_en` are never high together | every clock, disabled during reset | Supplied with the scaffold, not mine |
+| `NO_STORE_TO_DATA0` (3.1) | The CPU never writes data-SRAM word 0 | every clock, disabled during reset | Withdrawn |
+| `NO_MEM_ACCESS_WHEN_IDLE` (3.2) | `dsram_en` is low while `cpu_active` is low and the external port is not requesting | every clock, disabled during reset | Kept, narrowed |
+| `RESET_QUIESCES_CONTROL` (3.3) | After reset has been high for two clocks, `cpu_active` and `cpu_halted` are low | every clock, not disabled during reset | Kept, added after review |
+| `HALT_RELEASES_CPU` (3.4) | After `halt_cpu` is asserted while `cpu_active` is high, `cpu_active` goes low within 2 clocks | every clock, disabled during reset | Kept, replaces 3.1 |
 
-### 3.1 — `NO_STORE_TO_DATA0`
+Every assertion reports through `assertion_fail`, so a violation is counted in the "Assertion failures" line of the final summary.
 
-**Timing requirement in words:** On any cycle where the CPU owns the memories
-and asserts a data-SRAM write, the target word address must not be 0. This is a
-same-cycle property with no temporal window: the violation is visible at the
-moment the write is asserted, which is strictly stronger than checking
-`dmem[0]` after the program ends, because a store of the value zero to word 0
-would leave no trace in the final state.
+### 3.1 — `NO_STORE_TO_DATA0` (withdrawn)
 
-```systemverilog
-NO_STORE_TO_DATA0:
-  assert property (@(posedge clk) disable iff (reset)
-    (cpu_active && dsram_en && dsram_write_en) |-> (dsram_addr != 10'd0))
-  else assertion_fail("CPU asserted a data-SRAM write to word address 0");
-```
-
-**Evidence that it detects a violation:** _(planned)_ Temporarily add a program
-containing `sw x1, 0(x0)`, confirm the assertion fires with the cycle recorded
-in the log, capture the waveform showing `dsram_write_en` high with
-`dsram_addr == 0`, then revert.
+In the initial plan I treated the Digital Design requirement that `data[0]` stays 0 as a rule for this testbench. It is not one. `init_memories()` fills data word 0 with a random value, and the scoreboard accepted a store to word 0 in random program 13 (0 mismatches). The assertion fired on that legal store at 707425 ns, so I removed it. It also fired on a deliberate `sw` to word 0 at 111005 ns, which shows it worked as written. Log: `evidence_NO_STORE_TO_DATA0.log`.
 
 ### 3.2 — `NO_MEM_ACCESS_WHEN_IDLE`
 
-**Timing requirement in words:** While `cpu_active` is low, the CPU must not
-drive a data-SRAM access. Ownership belongs to the external port during that
-time, and a CPU access would corrupt testbench-written data or return data the
-CPU was not entitled to read. Also a same-cycle property.
+The CPU must not access the data SRAM while the external port owns it. The first version only checked `cpu_active`, and it fired on every external data-memory access, because the memory controller raises `dsram_en` for the external port. It now ignores cycles where the external port is requesting.
 
 ```systemverilog
 NO_MEM_ACCESS_WHEN_IDLE:
-  assert property (@(posedge clk) disable iff (reset)
-    (!cpu_active) |-> (!dsram_en))
+  assert property (@(posedge cpu_if.clk) disable iff (rst)
+    (!cpu_if.cpu_active && !cpu_if.r_en && !cpu_if.w_en) |-> (!cpu_if.dsram_en))
   else assertion_fail("CPU drove a data-SRAM access while not active");
 ```
 
-**Evidence that it detects a violation:** _(planned)_ Temporarily force
-`cpu_active` low for one cycle mid-program, confirm the assertion fires, retain
-the log and waveform, then revert.
+### 3.3 — `RESET_QUIESCES_CONTROL` (added after review)
 
-**Note on a third candidate:** A bounded-response assertion on the external
-port — every `r_en` to a mapped window must be answered by `rready` within N
-cycles — would cover the protocol timing rather than the CPU. It is deferred
-until open question 3 fixes N and the unmapped-window contract.
+While reset is held, the control signals must be idle. Reset is synchronous, so the check starts once reset has been high on two consecutive clock edges. It has no `disable iff (rst)`, because it checks behavior during reset. My first version checked on the first edge and failed at 5 ns, because both signals are unknown before the first reset edge. Requiring that reset was also high on the previous edge (`rst_prev`) fixed it.
+
+```systemverilog
+RESET_QUIESCES_CONTROL:
+  assert property (@(posedge cpu_if.clk)
+    (cpu_if.reset && rst_prev) |-> (!cpu_if.cpu_active && !cpu_if.cpu_halted))
+  else assertion_fail("Control signals not idle while reset was asserted");
+```
+
+### 3.4 — `HALT_RELEASES_CPU`
+
+The README says an external halt returns the memories to the external port, and `chip_top.sv` drops the CPU enable when `halt_cpu_i` is high. The assertion checks that `cpu_active` goes low within two clocks.
+
+```systemverilog
+HALT_RELEASES_CPU:
+  assert property (@(posedge cpu_if.clk) disable iff (rst)
+    (cpu_if.halt_cpu && cpu_if.cpu_active) |-> ##[1:2] !cpu_if.cpu_active)
+  else assertion_fail("cpu_active stayed high after an external halt request");
+```
+
+## Evidence that each assertion detects a violation
+
+For each assertion I made one temporary change that should violate it, ran the suite, saved the log, and reverted the change. After every revert `git status` was clean and the suite passed with 0 assertion failures.
+
+| Assertion | Temporary change | Result | Log |
+| --- | --- | --- | --- |
+| `NO_STORE_TO_DATA0` | added a test with `sw x0, 0(x0)` | fired at 111005 ns | `evidence_NO_STORE_TO_DATA0.log` |
+| `NO_MEM_ACCESS_WHEN_IDLE` | default of `dsram_en_o` in `memory_controller.sv` set to 1 | fired at 55, 85, 105 and 125 ns, then on every clock | `evidence_NO_MEM_ACCESS.log` |
+| `RESET_QUIESCES_CONTROL` | reset value of `halted_o` in `cpu_top.sv` set to 1 | fired at 15 ns | `evidence_RESET_QUIESCES.log` |
+| `HALT_RELEASES_CPU` | `halt_cpu_i` removed from the enable logic in `chip_top.sv` line 53 | fired at 42455 ns | `evidence_HALT_RELEASES.log` |
 
 ---
 
 # 4. Encrypted CPU Bug Hunt
 
-Not started. This stage runs after the member suite passes and coverage closes.
-Per the README, each bug must first be found through constrained-random
-stimulus, not written as a directed test in advance, so no bug hypotheses are
-recorded here.
+All three bugs were found on bug-hunt variant 2 (username mrathod34). My own CPU passes every reproducer below. I added tests and fixed the testbench after the first random failures, so the same seeds no longer regenerate the original programs. The saved logs (`hunt_2_original.log`, `hunt_3_original.log`, `hunt_4_original.log`) hold the original programs. Every reproducer below is a directed test that still fails on the encrypted CPU with the final testbench.
 
-## Random discovery
+## Bug 1: one store produces two data-SRAM writes
 
 | Field | Evidence |
 | --- | --- |
 | Discovery command | `make bug_hunt SEED=random` |
-| Numeric SVSEED | _(to be recorded)_ |
-| Failing iteration | _(to be recorded)_ |
-| First failure message | _(to be recorded)_ |
-| Reproduction command | `make bug_hunt SEED=________` |
-| Reproduces consistently? | _(to be recorded)_ |
+| Numeric SVSEED | -1029823312 |
+| Failing iteration | random_1 |
+| First failure message | `[random_1] Store mismatch: expected [0x37] <- 0x0, got [0x109] <- 0x0` |
+| Reproduction command | `make bug_hunt SEED=-1029823312` |
+| Reproduces consistently? | Yes. Rerunning the same seed gave the same first failure. |
 
-**Original failing program:**
-```systemverilog
-prog = '{
-  // Paste original generated sequence
-  EBREAK_WORD
-};
+**Original failing program (random_1, 30 instructions, from `hunt_2_original.log`):**
+
+```
+[0] sub x1, x15, x4          [15] sw x3, 1696(x4)
+[1] sw x2, 1060(x0)          [16] srl x6, x1, x2
+[2] srl x5, x0, x2           [17] addi x1, x2, 0
+[3] addi x6, x5, -2048       [18] beq x2, x8, 32
+[4] sw x4, 220(x0)           [19] sub x21, x3, x5
+[5] beq x4, x19, 40          [20] addi x0, x4, 1907
+[6] sll x3, x2, x7           [21] sll x22, x7, x0
+[7] sll x4, x3, x2           [22] sll x3, x0, x3
+[8] addi x7, x6, 0           [23] sub x27, x0, x4
+[9] add x16, x6, x3          [24] lw x6, 1572(x4)
+[10] add x17, x0, x7         [25] beq x19, x5, 8
+[11] sub x5, x6, x17         [26] lw x5, 32(x5)
+[12] addi x0, x3, 0          [27] srl x18, x22, x6
+[13] srl x7, x3, x0          [28] addi x2, x0, 896
+[14] add x7, x14, x14        [29] ebreak
 ```
 
-## Expected vs. actual
+**Expected vs. actual**
 
 | Instruction / event | Expected | Actual | Cycle/time |
 | --- | --- | --- | --- |
-| | | | |
+| `sw x0, 4(x0)` | one data-SRAM write to word 1 | `dsram_write_en` high for two clock cycles with `dsram_addr` = 001 and data 0, so the monitor saw two stores | about 85,200 ns in the waveform run |
+| Scoreboard | queue empty after the one store | `Unexpected CPU store to addr 0x1 with data 0x0` | 85515 ns |
 
-**First architectural divergence:** _(to be recorded)_
+**First architectural divergence:** the second data-SRAM write of the same `sw`. After it, the later stores in the original program were compared one position late, which produced the chain of store mismatches.
 
-## Minimization
+**Minimization.** Reducing the 30-instruction program gave:
 
-**Minimized reproducer:**
 ```systemverilog
 prog = '{
-  // Smallest sequence that still fails
+  asm_instr(.op(OP_SW), .rs1(0), .rs2(0), .imm(4)),   // sw x0, 4(x0)
   EBREAK_WORD
 };
 ```
 
-## Waveform evidence
+This is `min_one_store`. It fails on the encrypted CPU and passes on my CPU. I confirmed the minimum by reducing in steps (three stores, then one). I did not check whether the duplicate depends on the address, the data value or the base register.
 
-_(screenshot to be added)_
+**Waveform evidence:** `bug1_encrypted.png` (two-cycle write pulse) and `bug1_member.png` (one-cycle pulse), signals `dsram_en`, `dsram_write_en`, `dsram_addr`, `dsram_wdata`, `clk`.
 
-## Conclusion
+**Conclusion**
+- **Trigger:** a `sw` instruction. I tested only `sw x0, 4(x0)` and a three-store program.
+- **Expected behavior:** one data-SRAM write per `sw`.
+- **Observed behavior:** two consecutive writes with the same address and data.
+- **Characterization:** the store write enable is high for two clock cycles instead of one (waveform). Not explained: the three-store test also reported `CPU halted before completing 2 expected stores`.
 
-**Trigger:** _(to be recorded)_
+## Bug 2: beq takes the branch when the operands differ only above bit 7
 
-**Expected behavior:** _(to be recorded)_
+| Field | Evidence |
+| --- | --- |
+| Discovery command | `make bug_hunt SEED=random` |
+| Numeric SVSEED | -1494472679 |
+| Failing iteration | random_13 |
+| First failure message | `[random_13] read of register x3 returned 0x00000000, expected 0xdadc8511` |
+| Reproduction command | `make bug_hunt SEED=-1494472679` |
+| Reproduces consistently? | Yes for the directed reproducer below. The original random program no longer regenerates. |
 
-**Observed behavior:** _(to be recorded)_
+**How it was found.** The random_13 failure above led to bug 3 (below). While reducing it I ran directed `beq` tests, and they showed this second trigger. I did not find a random program that shows only this trigger.
 
-**Behavioral characterization:** _(to be recorded)_
+**Expected vs. actual**
+
+| Instruction / event | Expected | Actual | Cycle/time |
+| --- | --- | --- | --- |
+| `beq x7, x6, 8` with x7 = 0 and x6 = 0x100 | not taken, so `addi x3, x0, 5` runs and x3 = 5 | branch taken, `addi x3` skipped, x3 = 0 | readback at 98555 ns |
+
+**Minimization:**
+
+```systemverilog
+prog = '{
+  asm_instr(.op(OP_ADDI), .rd(1), .rs1(0), .imm(1)),
+  asm_instr(.op(OP_ADDI), .rd(2), .rs1(0), .imm(8)),
+  asm_instr(.op(OP_SLL),  .rd(6), .rs1(1), .rs2(2)),
+  asm_instr(.op(OP_BEQ),  .rs1(7), .rs2(6), .imm(8)),
+  asm_instr(.op(OP_ADDI), .rd(3), .rs1(0), .imm(5)),
+  EBREAK_WORD
+};
+```
+
+This is `min_beq_bit8`. It fails on the encrypted CPU and passes on mine.
+
+**Experiments separating the trigger from nearby possibilities.** x7 = 0 in every case, and x6 is the value shown.
+
+| x6 | Result on the encrypted CPU |
+| --- | --- |
+| 1 and 2 (`min_beq_rs1zero`, `min_beq_nonzero`); 4, 16 and 128 (`min_beq_bit2`, `bit4`, `bit7`) | passes |
+| 255 and 257 (`min_beq_imm255`, `min_beq_imm257`) | passes |
+| 256 (`min_beq_bit8`, `min_beq_imm256`) | fails |
+| 0x10000, 0x40000000 and 0x80000000 (`min_beq_bit16`, `bit30`, `highbit`) | fails |
+
+**Waveform evidence:** `bug2_encrypted.png` (x3 reads 00000000) and `bug2_member.png` (x3 reads 00000005).
+
+**Conclusion**
+- **Trigger:** `beq` on two registers that differ only in bits above bit 7 (for example 0 and 0x100).
+- **Expected behavior:** not taken, because the registers are not equal.
+- **Observed behavior:** taken.
+- **Characterization:** consistent with a comparison of only the low 8 bits. This is a hypothesis from the table above, because the RTL is protected.
+
+## Bug 3: beq right after a lw reads the old value of the loaded register
+
+| Field | Evidence |
+| --- | --- |
+| Discovery command | `make bug_hunt SEED=random` |
+| Numeric SVSEED | -1494472679 (random_13) and 1345100999 (random_5) |
+| Failing iteration | random_13 |
+| First failure message | `[random_13] CPU halted before completing 1 expected stores` |
+| Reproduction command | `make bug_hunt SEED=-1494472679` |
+| Reproduces consistently? | Yes for the directed reproducer. The original random program no longer regenerates. |
+
+**Original failing program (random_13, from `hunt_3_original.log`):**
+
+```
+[0] beq x1, x1, 24           [8] beq x7, x6, 28
+[1] srl x3, x6, x4           [9] srl x20, x24, x4
+[2] sw x1, 420(x1)           [10] lw x3, 900(x7)
+[3] sw x5, 1984(x4)          [11] beq x17, x3, 8
+[4] addi x1, x5, -2048       [12] sw x3, 1280(x3)
+[5] sw x6, 1148(x1)          [13] add x5, x2, x3
+[6] srl x0, x7, x6           [14] addi x30, x2, 0
+[7] lw x6, 504(x3)           [15] ebreak
+```
+
+**Expected vs. actual**
+
+| Instruction / event | Expected | Actual | Cycle/time |
+| --- | --- | --- | --- |
+| `lw x3, 900(x7)` then `beq x17, x3, 8` | loaded value is not 0, so the branch is not taken and the store at [12] runs | x3 ended at 0, no store was made, so the branch was taken | readback at 676095 ns |
+
+**Minimization:**
+
+```systemverilog
+prog = '{
+  asm_instr(.op(OP_LW),  .rd(6), .rs1(0), .imm(504)),
+  asm_instr(.op(OP_BEQ), .rs1(7), .rs2(6), .imm(8)),
+  asm_instr(.op(OP_ADDI), .rd(3), .rs1(0), .imm(5)),
+  EBREAK_WORD
+};
+```
+
+This is `min_lwuse_beq`. x6 loaded `0x869afca3` and x7 = 0, so a correct CPU does not branch. The encrypted CPU did, and x3 ended at 0.
+
+**Experiments separating the trigger from nearby possibilities**
+
+| Test | Result on the encrypted CPU |
+| --- | --- |
+| `min_lw_gap_beq`: one unrelated `addi` between the `lw` and the `beq` | passes |
+| `min_lwuse_stale_ne`: x6 was 5 before the `lw` | passes |
+| `min_lwuse_stale_eq`: x6 and x7 both 5 before the `lw` | fails |
+| `min_lwuse_add`: `add` right after the `lw` instead of `beq` | passes |
+| `min_lw_pair`: two loads in a row | passes |
+
+**Waveform evidence:** `bug3_encrypted.png` (x6 reads 869AFCA3, x3 reads 00000000) and `bug3_member.png` (x3 reads 00000005).
+
+**Conclusion**
+- **Trigger:** a `beq` immediately after a `lw` that loads one of its operand registers. The directed tests load the second operand. In random_5 the loaded register is the first operand, and I did not test that case separately.
+- **Expected behavior:** the branch compares the loaded value.
+- **Observed behavior:** the branch was taken, as if it had compared the register's value from before the load.
+- **Characterization:** consistent with a stale read of the load target. The loaded value in the failing tests has a nonzero low byte, so bug 2 does not explain it. The `add` test passes, so the problem appears specific to the branch comparison.
 
 ---
 
-## Planned minimization method
+# 5. Coverage
 
-Recorded now so the approach is not improvised under time pressure:
+The coverage database from the full member suite gives 98.69% for `cpu_tb_top.dut` (1889 of 2019 items). That is above the 98% requirement. Screenshot: `coverage_final.png`.
 
-1. Keep the first reproducible failing seed and iteration untouched as the
-   primary record.
-2. Bisect the failing program by halving the instruction sequence, keeping the
-   half that still fails.
-3. Once no further instruction can be removed, vary one operand at a time to
-   separate the trigger from coincidental context — for example, whether the
-   failure depends on a specific register number, a specific immediate value,
-   or only on the instruction pair being adjacent.
-4. Construct a directed test that reproduces the failure deterministically, and
-   confirm it passes against the member CPU. A reproducer that also fails on a
-   known-good CPU indicates a testbench defect rather than a DUT bug.
+| Metric for `dut` | Result |
+| --- | --- |
+| Block | 99.76% |
+| Expression | 98.61% |
+| Toggle | 96.84% |
+| FSM | 100% |
+
+The first measurement was already above 98%, so no test was added to close coverage. Running the planned directed tests afterwards did not change the figure.
+
+---
+
+# 6. Files in the archive
+
+| File | What it shows |
+| --- | --- |
+| `simulation.log` | the member suite passing: 0 scoreboard mismatches, 0 driver timeouts, 0 assertion failures |
+| `coverage_final.png` | IMC coverage for `cpu_tb_top.dut` |
+| `bug1_encrypted.png`, `bug1_member.png` | bug 1 waveforms |
+| `bug2_encrypted.png`, `bug2_member.png` | bug 2 waveforms |
+| `bug3_encrypted.png`, `bug3_member.png` | bug 3 waveforms |
+| `evidence_NO_STORE_TO_DATA0.log`, `evidence_NO_MEM_ACCESS.log`, `evidence_RESET_QUIESCES.log`, `evidence_HALT_RELEASES.log` | one log per assertion, taken with a temporary violation |
+| `hunt_2_original.log`, `hunt_3_original.log`, `hunt_4_original.log` | the first random failures for the three bugs |
