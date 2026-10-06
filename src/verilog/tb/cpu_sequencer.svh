@@ -7,9 +7,17 @@ class cpu_sequencer #(int DataSize=32, int AddrSize=14);
 
     mailbox #(cpu_xbar_item #(DataSize, AddrSize)) xbar_box;
 
+    // Mirror data-memory initialization writes. gen_program starts a private
+    // reference model from this image and advances it only along the generated
+    // program's reachable path. This is generation context, not DUT checking.
+    logic [31:0] shadow_dmem [DSRAM_WORDS];
+
     // Constructor
     function new();
         xbar_box = new();
+        foreach (shadow_dmem[i]) begin
+            shadow_dmem[i] = '0;
+        end
     endfunction: new
 
     // Build a random program and enqueue frontdoor instruction writes.
@@ -17,21 +25,59 @@ class cpu_sequencer #(int DataSize=32, int AddrSize=14);
     // constraints depend on the instruction's position.
     task gen_program(input int num, input bit verbose=1'b1);
         cpu_seq_item #(DataSize, AddrSize) instr;
+        cpu_ref_model shadow;
+        logic [31:0] program_words [$];
+        logic [31:0] effective_addr;
+        bit reachable;
         int prog_len;
 
+        if ((num < 0) || (num >= ISRAM_WORDS)) begin
+            $fatal(1,
+                    "%0t Seq: program needs 0..%0d random instructions, got %0d",
+                    $time, ISRAM_WORDS - 1, num);
+        end
+
         prog_len = num + 1; // +1 for the ebreak
+        shadow = new();
+        shadow.load_dmem(shadow_dmem);
 
         for (int i = 0; i < num; i++) begin
             instr = new();
             instr.idx = i;
             instr.prog_len = prog_len;
+            foreach (shadow.regs[r]) begin
+                instr.reg_snapshot[r] = shadow.regs[r];
+            end
             if (!instr.randomize()) begin
-                $error($stime, " Seq: randomization failed for instruction %0d\n", i);
+                $fatal(1, "%0t Seq: state-aware randomization failed for instruction %0d",
+                        $time, i);
+            end
+
+            // Keep this independent diagnostic while c_mem_align is a member
+            // TODO. If it fires, the generated instruction violated the
+            // effective-address contract described on that constraint.
+            if (instr.op inside {OP_LW, OP_SW}) begin
+                effective_addr = instr.reg_snapshot[instr.rs1] + instr.imm;
+                if ((effective_addr[1:0] != 2'b00) ||
+                        (effective_addr > ((DSRAM_WORDS * 4) - 4))) begin
+                    $fatal(1,
+                            "%0t Seq: illegal effective byte address 0x%08x for %s; complete c_mem_align",
+                            $time, effective_addr, instr.asm());
+                end
             end
             if (verbose) begin
                 instr.display();
             end
-            send_write_trans(word_addr(ISRAM_BASE, i), instr.encode());
+            program_words.push_back(instr.encode());
+
+            // Taken forward branches may skip generated slots. They still
+            // belong in instruction memory, but skipped instructions must not
+            // change the state supplied to a later reachable instruction.
+            reachable = !shadow.halted && (shadow.pc[11:2] == i);
+            shadow.imem[i] = instr.encode();
+            if (reachable) begin
+                shadow.step();
+            end
         end
 
         // Append ebreak explicitly so a random program cannot halt early
@@ -46,7 +92,21 @@ class cpu_sequencer #(int DataSize=32, int AddrSize=14);
         if (verbose) begin
             instr.display();
         end
-        send_write_trans(word_addr(ISRAM_BASE, num), instr.encode());
+        program_words.push_back(instr.encode());
+        shadow.imem[num] = instr.encode();
+
+        if (!shadow.halted && (shadow.pc[11:2] == num)) begin
+            shadow.step();
+        end
+        if (!shadow.halted) begin
+            $fatal(1,
+                    "%0t Seq: generated control flow missed the final ebreak (pc=0x%08x); complete c_branch_target",
+                    $time, shadow.pc);
+        end
+
+        foreach (program_words[i]) begin
+            send_write_trans(word_addr(ISRAM_BASE, i), program_words[i]);
+        end
     endtask: gen_program
 
     // Stage one external write transaction
@@ -58,6 +118,9 @@ class cpu_sequencer #(int DataSize=32, int AddrSize=14);
         trans.addr = addr;
         trans.data = data;
         trans.is_write = 1'b1;
+        if ((window_of(addr) == WIN_DSRAM) && (addr[1:0] == 2'b00)) begin
+            shadow_dmem[addr[11:2]] = data;
+        end
         xbar_box.put(trans);
     endtask: send_write_trans
 

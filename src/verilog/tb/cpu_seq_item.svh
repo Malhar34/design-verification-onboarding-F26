@@ -18,6 +18,7 @@ class cpu_seq_item #(int DataSize=32, int AddrSize=14);
     // Set by the sequencer before randomize()
     int idx;        // Position of this instruction in the program
     int prog_len;   // Length used by branch constraints
+    logic [REG_COUNT-1:0][31:0] reg_snapshot;
 
     // Keep generated instructions within the supported instruction set
     constraint c_opcode {
@@ -46,9 +47,8 @@ class cpu_seq_item #(int DataSize=32, int AddrSize=14);
 
     constraint c_mem_align {
         (op inside {OP_LW, OP_SW}) -> {
-            imm % 4 == 0;
-	        imm >= 0;
-	        imm < 4096;
+            ((reg_snapshot[rs1] + imm) & 32'h3) == 32'h0;
+            (reg_snapshot[rs1] + imm) <= 32'd4092;
         }
     }
 
@@ -59,10 +59,10 @@ class cpu_seq_item #(int DataSize=32, int AddrSize=14);
 
     constraint c_branch_target {
         (op == OP_BEQ) ->{
-	   imm % 4 == 0;
-	   imm >= 4;
-	   imm <= (prog_len - idx) * 4;
-	}
+	        imm % 4 == 0;
+	        imm >= 4;
+	        imm <= (prog_len - idx - 1) * 4;
+	    }
     }
 
     // Prevent a branch in the final generated slot
@@ -78,6 +78,7 @@ class cpu_seq_item #(int DataSize=32, int AddrSize=14);
     function new();
         idx = 0;
         prog_len = 1;
+        reg_snapshot = '0;
     endfunction: new
 
     // Encode the instruction fields into an instruction-memory word
